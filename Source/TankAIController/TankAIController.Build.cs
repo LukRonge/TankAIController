@@ -37,7 +37,10 @@ public class TankAIController : ModuleRules
 				"ChaosVehicles",
 				"Niagara",
 				"PhysicsCore",
-				"WeaponPlugin"
+				"WeaponPlugin",
+				"UMG",
+				"NavigationSystem",
+				"AIModule"
 			}
 		);
 

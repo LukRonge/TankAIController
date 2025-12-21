@@ -26,7 +26,9 @@ void ABaseTankAIController::BeginPlay()
 	LineTraceDistances.SetNum(NumLineTraces);
 	for (int32 i = 0; i < NumLineTraces; i++)
 	{
-		LineTraceDistances[i] = 1.0f; // Initialize to max distance (normalized)
+		// FIXED: Initialize to max distance (clear space) instead of -1.0f
+		// UE Learning Agents will normalize this by EllipseMajorAxis (350.0f) to get 1.0
+		LineTraceDistances[i] = EllipseMajorAxis;
 	}
 }
 
@@ -106,19 +108,20 @@ void ABaseTankAIController::PerformLineTraces()
 			QueryParams
 		);
 
-		// Calculate normalized distance
-		float Distance;
+		// Store raw distance to obstacle (in cm), or max distance if no obstacle
 		if (bHit)
 		{
-			Distance = FVector::Dist(TraceStart, HitResult.ImpactPoint);
+			// Calculate real distance to obstacle in cm
+			float Distance = FVector::Dist(TraceStart, HitResult.ImpactPoint);
+			LineTraceDistances[i] = Distance;
 		}
 		else
 		{
-			Distance = MaxTraceDistance;
+			// FIXED: No obstacle detected - set to max ellipse distance (clear space)
+			// UE Learning Agents will normalize this by EllipseMajorAxis to get 1.0
+			// Previous: -1.0f caused incorrect normalization (-1.0 / 350.0 = -0.003)
+			LineTraceDistances[i] = EllipseMajorAxis;
 		}
-
-		// Normalize distance (0 = obstacle at tank, 1 = no obstacle within max distance)
-		LineTraceDistances[i] = FMath::Clamp(Distance / MaxTraceDistance, 0.0f, 1.0f);
 
 		// Debug visualization
 		if (bDrawDebugTraces)
@@ -160,9 +163,14 @@ void ABaseTankAIController::ApplyMovementToTank(float Throttle, float Steering)
 	CurrentThrottle = Throttle;
 	CurrentSteering = Steering;
 
-	// Apply to tank via interface
-	ControlledTank->MoveForward_Implementation(Throttle);
-	ControlledTank->MoveRight_Implementation(Steering);
+	// ========================================================================
+	// FIXED: Use SetAIMovementInput instead of MoveForward/MoveRight
+	// ========================================================================
+	// MoveForward_Implementation and MoveRight_Implementation call MoveForward()
+	// and MoveRight() which check IsLocallyControlled(). For AI-controlled tanks,
+	// this returns false and movement values are reset to 0.
+	// SetAIMovementInput bypasses this check and applies movement directly.
+	ControlledTank->SetAIMovementInput(Throttle, Steering);
 }
 
 void ABaseTankAIController::ApplyTurretRotationToTank(const FRotator& TurretRotation)

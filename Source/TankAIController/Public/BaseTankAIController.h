@@ -57,25 +57,21 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
 	int32 NumLineTraces = 16;
 
-	/** Major axis of ellipse (forward/backward) */
+	/** Major axis of ellipse (forward/backward) in cm - 15 meters */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
-	float EllipseMajorAxis = 2000.0f;
+	float EllipseMajorAxis = 1500.0f;
 
-	/** Minor axis of ellipse (left/right) */
+	/** Minor axis of ellipse (left/right) in cm - 7.5 meters */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
-	float EllipseMinorAxis = 1500.0f;
+	float EllipseMinorAxis = 750.0f;
 
-	/** Maximum trace distance for normalization */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
-	float MaxTraceDistance = 2000.0f;
-
-	/** Line trace results - normalized distances (0-1) */
+	/** Line trace results - raw distance in cm to obstacle, or -1.0 if no obstacle */
 	UPROPERTY(BlueprintReadOnly, Category = "Tank|LineTraces")
 	TArray<float> LineTraceDistances;
 
 	/** Whether to draw debug lines for traces */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
-	bool bDrawDebugTraces = false;
+	bool bDrawDebugTraces = true;
 
 	// ========== METHODS ==========
 

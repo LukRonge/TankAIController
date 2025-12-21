@@ -231,7 +231,7 @@ void ATankTrainingGameMode::RegisterTanksWithManager()
 
 	UE_LOG(LogTemp, Log, TEXT("TankTrainingGameMode: Found Learning Agents Manager, registering tanks..."));
 
-	// Register trainer tank
+	// Register ONLY trainer tank for recording phase
 	if (TrainerTank)
 	{
 		Manager->RegisterTrainerTank(TrainerTank);
@@ -242,16 +242,20 @@ void ATankTrainingGameMode::RegisterTanksWithManager()
 		UE_LOG(LogTemp, Error, TEXT("  → Trainer tank is null, cannot register!"));
 	}
 
-	// Register agent tank
+	// DO NOT register agent tank during recording phase
+	// This prevents "Agent 1 has not made observations and taken actions" warnings (25k+)
+	// Instead, just STORE the reference in Manager so EnableInferenceMode() can use it later
 	if (AgentTank)
 	{
-		Manager->RegisterAgentTank(AgentTank);
-		UE_LOG(LogTemp, Log, TEXT("  → Agent tank registered: %s"), *AgentTank->GetName());
+		Manager->SetAgentTank(AgentTank);
+		UE_LOG(LogTemp, Log, TEXT("  → Agent tank reference stored in Manager (NOT registered yet)"));
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("  → Agent tank is null, cannot register!"));
+		UE_LOG(LogTemp, Error, TEXT("  → Agent tank is null, cannot store reference!"));
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("TankTrainingGameMode: Tank registration complete."));
+	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Agent tank stored but NOT registered (prevents recording warnings)"));
+	UE_LOG(LogTemp, Warning, TEXT("  → AI tank will be automatically registered when training stops"));
+	UE_LOG(LogTemp, Log, TEXT("TankTrainingGameMode: Tank registration complete (Trainer only)."));
 }

@@ -44,29 +44,28 @@ void AHumanPlayerController::SetupInputComponent()
 
 	if (InputComponent)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("HumanPlayerController: InputComponent is valid, binding axes..."));
-
-		// Bind axis inputs - classic input system
-		InputComponent->BindAxis("MoveForward", this, &AHumanPlayerController::MoveForward);
-		UE_LOG(LogTemp, Warning, TEXT("  - Bound MoveForward"));
-
-		InputComponent->BindAxis("MoveRight", this, &AHumanPlayerController::MoveRight);
-		UE_LOG(LogTemp, Warning, TEXT("  - Bound MoveRight"));
-
-		InputComponent->BindAxis("LookUp", this, &AHumanPlayerController::LookUp);
-		UE_LOG(LogTemp, Warning, TEXT("  - Bound LookUp"));
-
-		InputComponent->BindAxis("LookRight", this, &AHumanPlayerController::LookRight);
-		UE_LOG(LogTemp, Warning, TEXT("  - Bound LookRight"));
+		// ========================================================================
+		// NOTE: Axis bindings (MoveForward, MoveRight, etc.) are NOT bound here
+		// ========================================================================
+		// The tank pawn (AWR_Tank_Pawn) has its own SetupPlayerInputComponent that
+		// binds the same axes. Input goes to the pawn first, so these controller
+		// bindings would never fire. Instead, we READ input from the pawn in Tick().
+		//
+		// Only action bindings work here because they're not bound on the pawn.
+		UE_LOG(LogTemp, Warning, TEXT("HumanPlayerController: NOTE - Axis inputs handled by tank pawn, reading in Tick()"));
 
 		// Bind action inputs for recording and training control
+		// These actions are NOT bound on the tank pawn, so they work here
 		InputComponent->BindAction("StartStopRecording", IE_Pressed, this, &AHumanPlayerController::StartStopRecording);
-		UE_LOG(LogTemp, Warning, TEXT("  - Bound StartStopRecording"));
+		UE_LOG(LogTemp, Warning, TEXT("  - Bound StartStopRecording (NumPad8)"));
 
 		InputComponent->BindAction("StartStopTraining", IE_Pressed, this, &AHumanPlayerController::StartStopTraining);
-		UE_LOG(LogTemp, Warning, TEXT("  - Bound StartStopTraining"));
+		UE_LOG(LogTemp, Warning, TEXT("  - Bound StartStopTraining (NumPad9)"));
 
-		UE_LOG(LogTemp, Warning, TEXT("HumanPlayerController: Input bindings setup complete - 4 axes + 2 actions bound"));
+		InputComponent->BindAction("EnableInference", IE_Pressed, this, &AHumanPlayerController::EnableInference);
+		UE_LOG(LogTemp, Warning, TEXT("  - Bound EnableInference (NumPad7)"));
+
+		UE_LOG(LogTemp, Warning, TEXT("HumanPlayerController: Input bindings setup complete - 3 action bindings"));
 	}
 	else
 	{
@@ -79,84 +78,74 @@ void AHumanPlayerController::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	// Base class performs line traces
-	// Apply current inputs to tank using base class method
+
+	// ========================================================================
+	// Read input and apply smoothing for ML training quality
+	// ========================================================================
+	// Keyboard inputs are digital (0/1/-1) which creates poor training data.
+	// Smoothing creates gradual transitions that ML can learn from.
 	if (ControlledTank)
 	{
-		ApplyMovementToTank(CurrentThrottle, CurrentSteering);
+		// Read RAW input from tank pawn (digital 0/1/-1 values)
+		const float RawThrottle = ControlledTank->GetTankThrottle_Implementation();
+		const float RawSteering = ControlledTank->GetTankSteering_Implementation();
+
+		// Apply smoothing filter for ML recording
+		ApplyInputSmoothing(DeltaTime, RawThrottle, RawSteering);
+
+		// Store raw values in base class (for compatibility)
+		CurrentThrottle = RawThrottle;
+		CurrentSteering = RawSteering;
+
+		// Read current turret rotation from tank pawn
+		AActor* Turret = ControlledTank->GetTurret_Implementation();
+		if (Turret)
+		{
+			CurrentTurretRotation = Turret->GetActorRotation();
+		}
+
+		// Note: Tank pawn handles its own movement in its Tick()
+		// We do NOT call ApplyMovementToTank here - that would override pawn's input
 	}
 }
 
-// ========== INPUT HANDLERS ==========
+void AHumanPlayerController::ApplyInputSmoothing(float DeltaTime, float RawThrottle, float RawSteering)
+{
+	// Exponential smoothing filter: smoothed = lerp(smoothed, raw, speed * deltaTime)
+	// This creates gradual transitions: 0 → 0.2 → 0.5 → 0.8 → 1.0
+	// Instead of instant jumps: 0 → 1
+
+	SmoothedThrottle = FMath::FInterpTo(SmoothedThrottle, RawThrottle, DeltaTime, InputSmoothingSpeed);
+	SmoothedSteering = FMath::FInterpTo(SmoothedSteering, RawSteering, DeltaTime, InputSmoothingSpeed);
+}
+
+// ========== INPUT HANDLERS (DEPRECATED) ==========
+// These methods are NO LONGER CALLED because input goes directly to tank pawn.
+// Input values are now READ from the tank pawn in Tick() instead.
+// Keeping these for reference but they can be removed in future cleanup.
 
 void AHumanPlayerController::MoveForward(float AxisValue)
 {
-	if (FMath::Abs(AxisValue) > 0.01f)
-	{
-		UE_LOG(LogTemp, Log, TEXT("HumanPlayerController::MoveForward called with AxisValue: %f"), AxisValue);
-	}
-
-	// Only store the value - Tick will apply it
-	CurrentThrottle = AxisValue;
+	// DEPRECATED: This method is never called - input goes to tank pawn
+	// CurrentThrottle is now read from tank pawn in Tick()
 }
 
 void AHumanPlayerController::MoveRight(float AxisValue)
 {
-	if (FMath::Abs(AxisValue) > 0.01f)
-	{
-		UE_LOG(LogTemp, Log, TEXT("HumanPlayerController::MoveRight called with AxisValue: %f"), AxisValue);
-	}
-
-	// Only store the value - Tick will apply it
-	CurrentSteering = AxisValue;
+	// DEPRECATED: This method is never called - input goes to tank pawn
+	// CurrentSteering is now read from tank pawn in Tick()
 }
 
 void AHumanPlayerController::LookUp(float AxisValue)
 {
-	// Invert Y axis for turret pitch (mouse up = look up)
-	AxisValue *= -1.0f;
-
-	if (FMath::Abs(AxisValue) > 0.01f)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("HumanPlayerController::LookUp called with AxisValue: %f (inverted), ControlledTank: %s, IsLocallyControlled: %d"),
-			AxisValue, ControlledTank ? *ControlledTank->GetName() : TEXT("NULL"), IsLocalPlayerController());
-	}
-
-	// Apply turret pitch control via interface _Implementation
-	if (ControlledTank)
-	{
-		// Call _Implementation method (WR_ControlsInterface uses BlueprintNativeEvent)
-		ControlledTank->LookUp_Implementation(AxisValue);
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("HumanPlayerController::LookUp - ControlledTank is NULL!"));
-	}
-
-	// Update current turret rotation for observation data
-	CurrentTurretRotation.Pitch += AxisValue;
+	// DEPRECATED: This method is never called - input goes to tank pawn
+	// Turret rotation is handled by tank pawn, we read it in Tick()
 }
 
 void AHumanPlayerController::LookRight(float AxisValue)
 {
-	if (FMath::Abs(AxisValue) > 0.01f)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("HumanPlayerController::LookRight called with AxisValue: %f, ControlledTank: %s, IsLocallyControlled: %d"),
-			AxisValue, ControlledTank ? *ControlledTank->GetName() : TEXT("NULL"), IsLocalPlayerController());
-	}
-
-	// Apply turret yaw control via interface _Implementation
-	if (ControlledTank)
-	{
-		// Call _Implementation method (WR_ControlsInterface uses BlueprintNativeEvent)
-		ControlledTank->LookRight_Implementation(AxisValue);
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("HumanPlayerController::LookRight - ControlledTank is NULL!"));
-	}
-
-	// Update current turret rotation for observation data
-	CurrentTurretRotation.Yaw += AxisValue;
+	// DEPRECATED: This method is never called - input goes to tank pawn
+	// Turret rotation is handled by tank pawn, we read it in Tick()
 }
 
 // ========== RECORDING & TRAINING CONTROLS ==========
@@ -222,6 +211,24 @@ void AHumanPlayerController::StartStopTraining()
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, TEXT("Training STARTED"));
 		}
+	}
+}
+
+void AHumanPlayerController::EnableInference()
+{
+	ATankLearningAgentsManager* Manager = GetLearningAgentsManager();
+	if (!Manager)
+	{
+		UE_LOG(LogTemp, Error, TEXT("HumanPlayerController::EnableInference - Cannot find TankLearningAgentsManager!"));
+		return;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("HumanPlayerController: Enabling inference mode..."));
+	Manager->EnableInferenceMode();
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Cyan, TEXT("INFERENCE MODE ENABLED - AI is now driving!"));
 	}
 }
 
