@@ -16,6 +16,18 @@ void AAILearningAgentsController::BeginPlay()
 
 void AAILearningAgentsController::Tick(float DeltaTime)
 {
+	// ========================================================================
+	// TEMPORAL CONTEXT: Update Previous at START of frame
+	// ========================================================================
+	// CurrentThrottle/Steering was set by SetThrottleFromAI in PREVIOUS frame.
+	// Save it as Previous so GatherObs (in Manager::Tick later) sees correct value.
+	//
+	// Timeline:
+	// Frame N-1: SetThrottleFromAI(A) sets Current = A
+	// Frame N:   Tick: Previous = A, then GatherObs sees Previous = A ✓
+	PreviousThrottle = CurrentThrottle;
+	PreviousSteering = CurrentSteering;
+
 	Super::Tick(DeltaTime);
 
 	// Apply AI inputs to tank using base class method
@@ -26,11 +38,13 @@ void AAILearningAgentsController::Tick(float DeltaTime)
 
 void AAILearningAgentsController::SetThrottleFromAI(float Value)
 {
+	// Just set current value - Previous is updated in Tick() at start of NEXT frame
 	CurrentThrottle = FMath::Clamp(Value, -1.0f, 1.0f);
 }
 
 void AAILearningAgentsController::SetSteeringFromAI(float Value)
 {
+	// Just set current value - Previous is updated in Tick() at start of NEXT frame
 	CurrentSteering = FMath::Clamp(Value, -1.0f, 1.0f);
 }
 

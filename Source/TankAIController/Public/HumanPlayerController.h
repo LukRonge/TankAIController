@@ -12,8 +12,8 @@
  * Inherits from BaseTankAIController to share common tank control functionality
  * Uses classic Input Axis Bindings (not Enhanced Input)
  *
- * INPUT SMOOTHING: Keyboard inputs (0/1/-1) are smoothed to gradual values
- * for better ML training data quality.
+ * RAW INPUT: Uses raw keyboard values (0/1/-1) for ML recording to ensure
+ * observation-action consistency - what the tank does matches what is recorded.
  */
 UCLASS()
 class TANKAICONTROLLER_API AHumanPlayerController : public ABaseTankAIController
@@ -27,23 +27,6 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
 	virtual void Tick(float DeltaTime) override;
-
-	// ========== INPUT SMOOTHING ==========
-
-	/** Smoothed throttle value (for ML recording) */
-	UPROPERTY(BlueprintReadOnly, Category = "Input|Smoothed")
-	float SmoothedThrottle = 0.0f;
-
-	/** Smoothed steering value (for ML recording) */
-	UPROPERTY(BlueprintReadOnly, Category = "Input|Smoothed")
-	float SmoothedSteering = 0.0f;
-
-	/** Smoothing speed - higher = faster response (units per second) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input|Smoothing Config")
-	float InputSmoothingSpeed = 4.0f;
-
-	/** Apply input smoothing filter */
-	void ApplyInputSmoothing(float DeltaTime, float RawThrottle, float RawSteering);
 
 	// ========== INPUT HANDLERS ==========
 
@@ -67,17 +50,6 @@ protected:
 
 	/** Enable inference mode (Action input) */
 	void EnableInference();
-
-public:
-	// ========== SMOOTHED INPUT GETTERS (for recording) ==========
-
-	/** Get smoothed throttle for ML recording */
-	UFUNCTION(BlueprintPure, Category = "Input|Smoothed")
-	float GetSmoothedThrottle() const { return SmoothedThrottle; }
-
-	/** Get smoothed steering for ML recording */
-	UFUNCTION(BlueprintPure, Category = "Input|Smoothed")
-	float GetSmoothedSteering() const { return SmoothedSteering; }
 
 private:
 	/** Get reference to TankLearningAgentsManager */

@@ -80,22 +80,21 @@ void AHumanPlayerController::Tick(float DeltaTime)
 	// Base class performs line traces
 
 	// ========================================================================
-	// Read input and apply smoothing for ML training quality
+	// Read RAW input from tank pawn for ML recording
 	// ========================================================================
-	// Keyboard inputs are digital (0/1/-1) which creates poor training data.
-	// Smoothing creates gradual transitions that ML can learn from.
+	// Using RAW values (0/1/-1) ensures observation-action consistency:
+	// - Tank moves according to raw input
+	// - We record the same raw input as action
+	// - No mismatch between what tank does and what is recorded
 	if (ControlledTank)
 	{
+		// Save previous values BEFORE updating (for temporal context in observations)
+		PreviousThrottle = CurrentThrottle;
+		PreviousSteering = CurrentSteering;
+
 		// Read RAW input from tank pawn (digital 0/1/-1 values)
-		const float RawThrottle = ControlledTank->GetTankThrottle_Implementation();
-		const float RawSteering = ControlledTank->GetTankSteering_Implementation();
-
-		// Apply smoothing filter for ML recording
-		ApplyInputSmoothing(DeltaTime, RawThrottle, RawSteering);
-
-		// Store raw values in base class (for compatibility)
-		CurrentThrottle = RawThrottle;
-		CurrentSteering = RawSteering;
+		CurrentThrottle = ControlledTank->GetTankThrottle_Implementation();
+		CurrentSteering = ControlledTank->GetTankSteering_Implementation();
 
 		// Read current turret rotation from tank pawn
 		AActor* Turret = ControlledTank->GetTurret_Implementation();
@@ -107,16 +106,6 @@ void AHumanPlayerController::Tick(float DeltaTime)
 		// Note: Tank pawn handles its own movement in its Tick()
 		// We do NOT call ApplyMovementToTank here - that would override pawn's input
 	}
-}
-
-void AHumanPlayerController::ApplyInputSmoothing(float DeltaTime, float RawThrottle, float RawSteering)
-{
-	// Exponential smoothing filter: smoothed = lerp(smoothed, raw, speed * deltaTime)
-	// This creates gradual transitions: 0 → 0.2 → 0.5 → 0.8 → 1.0
-	// Instead of instant jumps: 0 → 1
-
-	SmoothedThrottle = FMath::FInterpTo(SmoothedThrottle, RawThrottle, DeltaTime, InputSmoothingSpeed);
-	SmoothedSteering = FMath::FInterpTo(SmoothedSteering, RawSteering, DeltaTime, InputSmoothingSpeed);
 }
 
 // ========== INPUT HANDLERS (DEPRECATED) ==========

@@ -85,13 +85,36 @@ void ATankLearningAgentsManager::InitializeManager()
 		return;
 	}
 
-	// Create Policy using factory method
+	// Create Policy using factory method with EXPLICIT settings
+	// For reactive navigation task, simpler network without memory works better
 	ULearningAgentsInteractor* InteractorRef = Interactor;
+
+	FLearningAgentsPolicySettings PolicySettings;
+	PolicySettings.HiddenLayerNum = 2;          // 2 hidden layers (more depth, less width)
+	PolicySettings.HiddenLayerSize = 64;        // Smaller layers to prevent overfitting
+	PolicySettings.bUseMemory = false;          // DISABLE memory - reactive task doesn't need it
+	PolicySettings.MemoryStateSize = 0;         // No memory state
+	PolicySettings.InitialEncodedActionScale = 0.1f;  // Default
+	PolicySettings.ActivationFunction = ELearningAgentsActivationFunction::ELU;  // Default
+	PolicySettings.bUseParallelEvaluation = true;  // Enable for performance
+
+	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Creating Policy with custom settings:"));
+	UE_LOG(LogTemp, Warning, TEXT("  -> HiddenLayers: %d x %d neurons"), PolicySettings.HiddenLayerNum, PolicySettings.HiddenLayerSize);
+	UE_LOG(LogTemp, Warning, TEXT("  -> Memory: DISABLED (reactive task)"));
+
 	Policy = ULearningAgentsPolicy::MakePolicy(
 		ManagerRef,
 		InteractorRef,
 		ULearningAgentsPolicy::StaticClass(),
-		TEXT("TankPolicy"));
+		TEXT("TankPolicy"),
+		nullptr,  // EncoderNeuralNetworkAsset
+		nullptr,  // PolicyNeuralNetworkAsset
+		nullptr,  // DecoderNeuralNetworkAsset
+		true,     // bReinitializeEncoderNetwork
+		true,     // bReinitializePolicyNetwork
+		true,     // bReinitializeDecoderNetwork
+		PolicySettings,  // Custom policy settings
+		1234);    // Seed
 
 	if (Policy)
 	{
@@ -389,21 +412,39 @@ void ATankLearningAgentsManager::StartTraining()
 	ImitationTrainerSettings.TrainerCommunicationTimeout = 30.0f; // 30 seconds timeout
 
 	// Configure Imitation Trainer Training Settings
-	// Settings for ~50k experiences (15 min recording)
+	// ADAPTIVE: Scale iterations based on sample count to prevent overfitting
 	FLearningAgentsImitationTrainerTrainingSettings TrainingSettings;
-	TrainingSettings.NumberOfIterations = 50000;         // 50k iterations
-	TrainingSettings.LearningRate = 0.0003f;             // Lower LR for stability with more data
-	TrainingSettings.LearningRateDecay = 0.9995f;        // Slower decay for longer training
-	TrainingSettings.WeightDecay = 0.0001f;              // Weight decay
-	TrainingSettings.BatchSize = 128;                    // Larger batch for more data
+
+	// CRITICAL: Adaptive iteration count based on data size
+	// Rule of thumb: Each sample should be seen ~10-50 times max (with batching)
+	// With BatchSize=64 and 1000 samples: 1000/64 = ~16 batches per epoch
+	// Want ~50 epochs max, so iterations = samples * 50 / BatchSize = samples * 0.8
+	const int32 AdaptiveIterations = FMath::Clamp(
+		RecordedExperiencesCount,  // ~1 epoch per sample
+		500,                       // Minimum: 500 iterations
+		5000                       // Maximum: 5000 iterations (prevent over-training)
+	);
+
+	TrainingSettings.NumberOfIterations = AdaptiveIterations;
+	TrainingSettings.LearningRate = 0.001f;              // Higher LR for faster convergence (we have less iterations)
+	TrainingSettings.LearningRateDecay = 0.999f;         // Moderate decay
+	TrainingSettings.WeightDecay = 0.0001f;              // Weight decay for regularization
+	TrainingSettings.BatchSize = 64;                     // Smaller batch = more gradient updates
 	TrainingSettings.Window = 1;                         // Single frame - direct obs->action mapping
-	TrainingSettings.ActionRegularizationWeight = 0.001f; // Action regularization
-	TrainingSettings.ActionEntropyWeight = 0.0f;         // No entropy (deterministic)
+	TrainingSettings.ActionRegularizationWeight = 0.01f; // STRONGER regularization to prevent overfitting
+	TrainingSettings.ActionEntropyWeight = 0.0f;         // No entropy (deterministic actions)
 	TrainingSettings.RandomSeed = 1234;                  // Random seed
 	TrainingSettings.Device = TrainingDevice;            // GPU/CPU (blueprint configurable)
 	TrainingSettings.bUseTensorboard = false;            // No TensorBoard
 	TrainingSettings.bSaveSnapshots = true;              // Save snapshots
 	TrainingSettings.bUseMLflow = false;                 // No MLflow
+
+	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: ADAPTIVE training settings:"));
+	UE_LOG(LogTemp, Warning, TEXT("  -> Samples: %d"), RecordedExperiencesCount);
+	UE_LOG(LogTemp, Warning, TEXT("  -> Iterations: %d (adaptive, clamped 500-5000)"), AdaptiveIterations);
+	UE_LOG(LogTemp, Warning, TEXT("  -> BatchSize: %d"), TrainingSettings.BatchSize);
+	UE_LOG(LogTemp, Warning, TEXT("  -> LearningRate: %.4f"), TrainingSettings.LearningRate);
+	UE_LOG(LogTemp, Warning, TEXT("  -> ActionRegularization: %.3f"), TrainingSettings.ActionRegularizationWeight);
 
 	// Configure Process Path Settings (use defaults)
 	FLearningAgentsTrainerProcessSettings PathSettings;

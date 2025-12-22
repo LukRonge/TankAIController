@@ -3,7 +3,7 @@
 #include "TankLearningAgentsInteractor.h"
 #include "WR_Tank_Pawn.h"
 #include "AILearningAgentsController.h"
-#include "HumanPlayerController.h"
+#include "BaseTankAIController.h"
 #include "LearningAgentsManager.h"
 #include "TankLearningAgentsManager.h"
 
@@ -39,27 +39,47 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 
 	// Relative position to current waypoint (direction vector - normalized, LOCAL SPACE)
 	// X > 0 = waypoint in front, Y > 0 = waypoint to the right
-	ObservationElements.Add(TEXT("RelativeCurrentWaypointPosition"),
-		ULearningAgentsObservations::SpecifyDirectionObservation(InObservationSchema));
+	// MANUAL ENCODING: Using 3 separate floats instead of MakeDirectionObservation
+	// because MakeDirectionObservation may use different transform logic
+	ObservationElements.Add(TEXT("WaypointDirX"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
+	ObservationElements.Add(TEXT("WaypointDirY"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
+	ObservationElements.Add(TEXT("WaypointDirZ"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
 
 	// Distance to current waypoint - scale 5000.0f (50m max reasonable distance)
 	ObservationElements.Add(TEXT("DistanceToCurrentWaypoint"),
 		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 5000.0f));
 
 	// Relative position to final target (direction vector - normalized, LOCAL SPACE)
-	ObservationElements.Add(TEXT("RelativeTargetPosition"),
-		ULearningAgentsObservations::SpecifyDirectionObservation(InObservationSchema));
+	// MANUAL ENCODING: Using 3 separate floats
+	ObservationElements.Add(TEXT("TargetDirX"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
+	ObservationElements.Add(TEXT("TargetDirY"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
+	ObservationElements.Add(TEXT("TargetDirZ"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
 
 	// Distance to final target - scale 10000.0f (100m max reasonable distance)
 	ObservationElements.Add(TEXT("DistanceToTarget"),
 		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 10000.0f));
+
+	// ========== TEMPORAL CONTEXT (helps model learn action sequences) ==========
+	// Previous frame's throttle - scale 1.0 (already in -1 to 1 range)
+	ObservationElements.Add(TEXT("PreviousThrottle"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
+
+	// Previous frame's steering - scale 1.0 (already in -1 to 1 range)
+	ObservationElements.Add(TEXT("PreviousSteering"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
 
 	// Combine all observations into a struct
 	OutObservationSchemaElement = ULearningAgentsObservations::SpecifyStructObservation(
 		InObservationSchema,
 		ObservationElements);
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Observation schema specified (SIMPLIFIED for UGV navigation)."));
+	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Observation schema specified (27 features: 16 traces + 1 speed + 3 wp_dir(manual) + 1 wp_dist + 3 target_dir(manual) + 1 target_dist + 2 temporal)."));
 }
 
 void UTankLearningAgentsInteractor::SpecifyAgentAction_Implementation(
@@ -153,8 +173,14 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 	}
 
 	// Direction to waypoint - LOCAL SPACE (X > 0 = front, Y > 0 = right)
-	ObservationElements.Add(TEXT("RelativeCurrentWaypointPosition"),
-		ULearningAgentsObservations::MakeDirectionObservation(InObservationObject, DirectionToWaypoint, TankTransform));
+	// MANUAL: Transform to local space ourselves using InverseTransformVector
+	FVector LocalWaypointDir = TankTransform.InverseTransformVector(DirectionToWaypoint);
+	ObservationElements.Add(TEXT("WaypointDirX"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LocalWaypointDir.X));
+	ObservationElements.Add(TEXT("WaypointDirY"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LocalWaypointDir.Y));
+	ObservationElements.Add(TEXT("WaypointDirZ"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LocalWaypointDir.Z));
 
 	// Distance to waypoint - normalized by schema scale 5000.0f
 	ObservationElements.Add(TEXT("DistanceToCurrentWaypoint"),
@@ -183,35 +209,97 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 	}
 
 	// Direction to target - LOCAL SPACE
-	ObservationElements.Add(TEXT("RelativeTargetPosition"),
-		ULearningAgentsObservations::MakeDirectionObservation(InObservationObject, DirectionToTarget, TankTransform));
+	// MANUAL: Transform to local space ourselves using InverseTransformVector
+	FVector LocalTargetDir = TankTransform.InverseTransformVector(DirectionToTarget);
+	ObservationElements.Add(TEXT("TargetDirX"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LocalTargetDir.X));
+	ObservationElements.Add(TEXT("TargetDirY"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LocalTargetDir.Y));
+	ObservationElements.Add(TEXT("TargetDirZ"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LocalTargetDir.Z));
 
 	// Distance to target - normalized by schema scale 10000.0f
 	ObservationElements.Add(TEXT("DistanceToTarget"),
 		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, DistanceToTarget));
 
+	// ========== 5. TEMPORAL CONTEXT (helps model learn action sequences) ==========
+	const float PrevThrottle = TankController->GetPreviousThrottle();
+	const float PrevSteering = TankController->GetPreviousSteering();
+
+	ObservationElements.Add(TEXT("PreviousThrottle"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, PrevThrottle));
+
+	ObservationElements.Add(TEXT("PreviousSteering"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, PrevSteering));
+
 	// ========== DEBUG LOGGING ==========
-	// Transform direction to local space for logging
-	FVector LocalWaypointDir = TankTransform.InverseTransformVector(DirectionToWaypoint);
+	// LocalWaypointDir and LocalTargetDir already computed above for observations
 
 	static int32 ObsLogCounter = 0;
-	if (++ObsLogCounter % 120 == 0)  // Every 2 seconds
+	if (++ObsLogCounter % 30 == 0)  // Every 0.5 second for better debugging
 	{
+		UE_LOG(LogTemp, Warning, TEXT(""));
+		UE_LOG(LogTemp, Warning, TEXT("====== AGENT %d OBSERVATION DEBUG ======"), AgentId);
+
 		// Log LineTraces summary (front, right, back, left)
 		if (LineTraces.Num() >= 16)
 		{
-			UE_LOG(LogTemp, Log, TEXT("Agent %d LineTraces: Front=%.0f Right=%.0f Back=%.0f Left=%.0f (cm, max=1500)"),
-				AgentId, LineTraces[0], LineTraces[4], LineTraces[8], LineTraces[12]);
+			UE_LOG(LogTemp, Warning, TEXT("[OBSTACLES] Front=%.0f Right=%.0f Back=%.0f Left=%.0f (cm)"),
+				LineTraces[0], LineTraces[4], LineTraces[8], LineTraces[12]);
 		}
 
-		UE_LOG(LogTemp, Log, TEXT("Agent %d Navigation: WP_Dir=(%.2f,%.2f) WP_Dist=%.1fm Speed=%.0fcm/s"),
-			AgentId, LocalWaypointDir.X, LocalWaypointDir.Y, DistanceToWaypoint / 100.0f, ForwardSpeed);
+		// CRITICAL: Log LOCAL direction to waypoint
+		UE_LOG(LogTemp, Warning, TEXT("[WAYPOINT] LocalDir=(%.3f, %.3f, %.3f)"),
+			LocalWaypointDir.X, LocalWaypointDir.Y, LocalWaypointDir.Z);
+
+		// Interpret direction for human readability
+		const TCHAR* WpFrontBack = (LocalWaypointDir.X > 0.1f) ? TEXT("FRONT") : ((LocalWaypointDir.X < -0.1f) ? TEXT("BEHIND") : TEXT("SIDE"));
+		const TCHAR* WpLeftRight = (LocalWaypointDir.Y > 0.1f) ? TEXT("RIGHT") : ((LocalWaypointDir.Y < -0.1f) ? TEXT("LEFT") : TEXT("CENTER"));
+		UE_LOG(LogTemp, Warning, TEXT("[WAYPOINT] Direction: %s-%s | Distance: %.1fm"),
+			WpFrontBack, WpLeftRight, DistanceToWaypoint / 100.0f);
+
+		// Tank state
+		UE_LOG(LogTemp, Warning, TEXT("[TANK] Speed=%.0f cm/s | PrevThrottle=%.3f | PrevSteering=%.3f"),
+			ForwardSpeed, PrevThrottle, PrevSteering);
+
+		// Tank orientation info
+		if (ControlledTank)
+		{
+			FVector TankForward = ControlledTank->GetActorForwardVector();
+			FVector TankLocation = ControlledTank->GetActorLocation();
+			UE_LOG(LogTemp, Log, TEXT("[TANK] Location: %s"), *TankLocation.ToString());
+			UE_LOG(LogTemp, Log, TEXT("[TANK] Forward (World): (%.2f, %.2f, %.2f)"),
+				TankForward.X, TankForward.Y, TankForward.Z);
+		}
+
+		// World space waypoint info
+		if (AgentManager)
+		{
+			ATankLearningAgentsManager* TankManager = Cast<ATankLearningAgentsManager>(AgentManager->GetOwner());
+			if (TankManager)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[MANAGER] bHasActiveTarget=%s | WaypointEnabled=%s"),
+					TankManager->bHasActiveTarget ? TEXT("TRUE") : TEXT("FALSE"),
+					TankManager->IsWaypointPathFollowingEnabled() ? TEXT("TRUE") : TEXT("FALSE"));
+
+				if (TankManager->bHasActiveTarget)
+				{
+					FVector WpWorld = TankManager->GetCurrentWaypointLocation();
+					UE_LOG(LogTemp, Log, TEXT("[WAYPOINT] World Location: %s"), *WpWorld.ToString());
+				}
+			}
+		}
 
 		// Warning if no navigation goal
 		if (DirectionToWaypoint.IsNearlyZero())
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Agent %d: No waypoint direction! Check target/waypoint system."), AgentId);
+			UE_LOG(LogTemp, Error, TEXT(""));
+			UE_LOG(LogTemp, Error, TEXT("!!! CRITICAL: NO WAYPOINT DIRECTION !!!"));
+			UE_LOG(LogTemp, Error, TEXT("!!! AI cannot navigate - check bHasActiveTarget !!!"));
+			UE_LOG(LogTemp, Error, TEXT(""));
 		}
+
+		UE_LOG(LogTemp, Warning, TEXT("========================================="));
 	}
 
 	// Combine all observations into a struct
@@ -253,12 +341,79 @@ void UTankLearningAgentsInteractor::PerformAgentAction_Implementation(
 		AIController->SetSteeringFromAI(Steering);
 	}
 
-	// DEBUG: Log AI actions every 60 frames (1 second)
+	// DEBUG: Log AI actions every 30 frames (0.5 second) - synchronized with observation logging
 	static int32 ActionLogCounter = 0;
-	if (++ActionLogCounter % 60 == 0)
+	if (++ActionLogCounter % 30 == 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("AI ACTIONS [Agent %d]: Throttle=%.3f | Steering=%.3f"),
-			AgentId, Throttle, Steering);
+		// CRITICAL: Log actions with interpretation
+		const TCHAR* ThrottleDir = (Throttle > 0.1f) ? TEXT("FORWARD") : ((Throttle < -0.1f) ? TEXT("BACKWARD") : TEXT("STOP"));
+		const TCHAR* SteeringDir = (Steering > 0.1f) ? TEXT("RIGHT") : ((Steering < -0.1f) ? TEXT("LEFT") : TEXT("STRAIGHT"));
+
+		UE_LOG(LogTemp, Warning, TEXT(""));
+		UE_LOG(LogTemp, Warning, TEXT("====== AGENT %d AI ACTION OUTPUT ======"), AgentId);
+		UE_LOG(LogTemp, Warning, TEXT("[ACTION] Throttle=%.3f (%s) | Steering=%.3f (%s)"),
+			Throttle, ThrottleDir, Steering, SteeringDir);
+
+		// Get tank for additional info
+		AWR_Tank_Pawn* TankPawn = Cast<AWR_Tank_Pawn>(GetAgentManager()->GetAgent(AgentId));
+		if (TankPawn)
+		{
+			FVector Velocity = TankPawn->GetVelocity();
+			float Speed = Velocity.Size();
+			UE_LOG(LogTemp, Warning, TEXT("[RESULT] Actual Speed: %.0f cm/s"), Speed);
+
+			// Check if action makes sense
+			// Get waypoint direction for comparison
+			ATankLearningAgentsManager* TankManager = nullptr;
+			if (GetAgentManager())
+			{
+				TankManager = Cast<ATankLearningAgentsManager>(GetAgentManager()->GetOwner());
+			}
+
+			if (TankManager && TankManager->bHasActiveTarget)
+			{
+				FVector WaypointLocation = TankManager->GetCurrentWaypointLocation();
+				FVector TankLocation = TankPawn->GetActorLocation();
+				FVector DirToWaypoint = (WaypointLocation - TankLocation).GetSafeNormal();
+				FVector LocalDir = TankPawn->GetActorTransform().InverseTransformVector(DirToWaypoint);
+
+				// Check for MISMATCH: waypoint in front but AI going backward (or vice versa)
+				bool bWaypointInFront = LocalDir.X > 0.3f;
+				bool bGoingForward = Throttle > 0.1f;
+				bool bGoingBackward = Throttle < -0.1f;
+
+				if (bWaypointInFront && bGoingBackward)
+				{
+					UE_LOG(LogTemp, Error, TEXT(""));
+					UE_LOG(LogTemp, Error, TEXT("!!! BEHAVIOR MISMATCH DETECTED !!!"));
+					UE_LOG(LogTemp, Error, TEXT("!!! Waypoint is IN FRONT (X=%.2f) but AI is going BACKWARD (Throttle=%.2f) !!!"), LocalDir.X, Throttle);
+					UE_LOG(LogTemp, Error, TEXT("!!! This indicates BAD TRAINING DATA or WRONG POLICY !!!"));
+					UE_LOG(LogTemp, Error, TEXT(""));
+				}
+				else if (!bWaypointInFront && LocalDir.X < -0.3f && bGoingForward)
+				{
+					// Waypoint behind but going forward - might be intentional (turning around)
+					UE_LOG(LogTemp, Log, TEXT("[INFO] Waypoint BEHIND (X=%.2f) but going FORWARD - may be turning around"), LocalDir.X);
+				}
+
+				// Check steering direction
+				bool bWaypointRight = LocalDir.Y > 0.3f;
+				bool bWaypointLeft = LocalDir.Y < -0.3f;
+				bool bSteeringRight = Steering > 0.3f;
+				bool bSteeringLeft = Steering < -0.3f;
+
+				if (bWaypointRight && bSteeringLeft)
+				{
+					UE_LOG(LogTemp, Error, TEXT("!!! STEERING MISMATCH: Waypoint RIGHT but steering LEFT !!!"));
+				}
+				else if (bWaypointLeft && bSteeringRight)
+				{
+					UE_LOG(LogTemp, Error, TEXT("!!! STEERING MISMATCH: Waypoint LEFT but steering RIGHT !!!"));
+				}
+			}
+		}
+
+		UE_LOG(LogTemp, Warning, TEXT("========================================="));
 	}
 }
 
@@ -285,8 +440,10 @@ void UTankLearningAgentsInteractor::EncodeHumanActionsForAgent(int32 AgentId)
 	// WARNING: This method uses INTERNAL UE::Learning:: API
 	// ========================================================================
 	// SIMPLIFIED for UGV drone navigation: Only Throttle + Steering
-	// USES SMOOTHED VALUES from HumanPlayerController for better ML training
-	// Keyboard digital inputs (0/1/-1) are smoothed to gradual values
+	// USES RAW VALUES to ensure observation-action consistency:
+	// - Tank moves according to raw input from player
+	// - We record the same raw input as action
+	// - No mismatch between what tank does and what is recorded
 	// ========================================================================
 
 	// Get the controller for this agent
@@ -297,28 +454,9 @@ void UTankLearningAgentsInteractor::EncodeHumanActionsForAgent(int32 AgentId)
 		return;
 	}
 
-	// Try to get HumanPlayerController for smoothed values
-	AHumanPlayerController* HumanController = Cast<AHumanPlayerController>(TankController);
-
-	float Throttle = 0.0f;
-	float Steering = 0.0f;
-
-	if (HumanController)
-	{
-		// Use SMOOTHED values for better ML training data
-		Throttle = HumanController->GetSmoothedThrottle();
-		Steering = HumanController->GetSmoothedSteering();
-	}
-	else
-	{
-		// Fallback to raw values from tank pawn
-		AWR_Tank_Pawn* TankPawn = TankController->GetControlledTank();
-		if (TankPawn)
-		{
-			Throttle = TankPawn->GetTankThrottle_Implementation();
-			Steering = TankPawn->GetTankSteering_Implementation();
-		}
-	}
+	// Use RAW values from controller (read from tank pawn in controller's Tick)
+	float Throttle = TankController->GetCurrentThrottle();
+	float Steering = TankController->GetCurrentSteering();
 
 	// Create action elements (Throttle + Steering only)
 	TMap<FName, FLearningAgentsActionObjectElement> ActionElements;
@@ -349,7 +487,7 @@ void UTankLearningAgentsInteractor::EncodeHumanActionsForAgent(int32 AgentId)
 	static int32 EncodeLogCounter = 0;
 	if (++EncodeLogCounter % 60 == 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("RECORDING [Agent %d]: Throttle=%.3f | Steering=%.3f (smoothed)"),
+		UE_LOG(LogTemp, Log, TEXT("RECORDING [Agent %d]: Throttle=%.3f | Steering=%.3f (raw)"),
 			AgentId, Throttle, Steering);
 	}
 }
