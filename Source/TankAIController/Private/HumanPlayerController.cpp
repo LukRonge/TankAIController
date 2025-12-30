@@ -77,24 +77,84 @@ void AHumanPlayerController::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Base class performs line traces
+	// Base class performs line traces, lateral traces, and angular velocity update
 
 	// ========================================================================
-	// Read RAW input from tank pawn for ML recording
+	// Read input from tank pawn for ML recording (with optional smoothing)
 	// ========================================================================
-	// Using RAW values (0/1/-1) ensures observation-action consistency:
-	// - Tank moves according to raw input
-	// - We record the same raw input as action
-	// - No mismatch between what tank does and what is recorded
+	// INPUT SMOOTHING (v2.0): Converts digital 0/1/-1 values into gradient
+	// values using exponential smoothing + noise injection for better
+	// behavior cloning training data.
+	//
+	// AUTO-DETECTION: If input values are NOT exactly -1, 0, or 1, assume
+	// gamepad (analog) input and skip smoothing to preserve raw analog values.
 	if (ControlledTank)
 	{
 		// Save previous values BEFORE updating (for temporal context in observations)
 		PreviousThrottle = CurrentThrottle;
 		PreviousSteering = CurrentSteering;
 
-		// Read RAW input from tank pawn (digital 0/1/-1 values)
-		CurrentThrottle = ControlledTank->GetTankThrottle_Implementation();
-		CurrentSteering = ControlledTank->GetTankSteering_Implementation();
+		// Read RAW input from tank pawn
+		const float RawThrottle = ControlledTank->GetTankThrottle_Implementation();
+		const float RawSteering = ControlledTank->GetTankSteering_Implementation();
+
+		// ========== AUTO-DETECT ANALOG INPUT (GAMEPAD) ==========
+		// Digital input (keyboard) produces exactly -1, 0, or 1
+		// Analog input (gamepad) produces values like 0.45, 0.78, etc.
+		bool bIsAnalogInput = false;
+		if (bAutoDetectAnalogInput)
+		{
+			// Check if throttle is analog (not exactly -1, 0, or 1)
+			const bool bThrottleIsAnalog =
+				(FMath::Abs(RawThrottle) > AnalogDetectionThreshold) &&
+				(FMath::Abs(RawThrottle) < (1.0f - AnalogDetectionThreshold));
+
+			// Check if steering is analog
+			const bool bSteeringIsAnalog =
+				(FMath::Abs(RawSteering) > AnalogDetectionThreshold) &&
+				(FMath::Abs(RawSteering) < (1.0f - AnalogDetectionThreshold));
+
+			bIsAnalogInput = bThrottleIsAnalog || bSteeringIsAnalog;
+		}
+
+		// Apply smoothing only for digital (keyboard) input
+		const bool bShouldSmooth = bEnableInputSmoothing && !bIsAnalogInput;
+
+		if (bShouldSmooth)
+		{
+			// Apply exponential smoothing to create gradient values from digital input
+			SmoothedThrottle = FMath::Lerp(SmoothedThrottle, RawThrottle, InputSmoothingAlpha);
+			SmoothedSteering = FMath::Lerp(SmoothedSteering, RawSteering, InputSmoothingAlpha);
+
+			// Add small noise for training data diversity
+			const float ThrottleNoise = FMath::FRandRange(-InputNoiseScale, InputNoiseScale);
+			const float SteeringNoise = FMath::FRandRange(-InputNoiseScale, InputNoiseScale);
+
+			// Apply smoothed + noisy values (clamped to valid range)
+			CurrentThrottle = FMath::Clamp(SmoothedThrottle + ThrottleNoise, -1.0f, 1.0f);
+			CurrentSteering = FMath::Clamp(SmoothedSteering + SteeringNoise, -1.0f, 1.0f);
+		}
+		else
+		{
+			// Use raw values without smoothing (for gamepad or when smoothing disabled)
+			CurrentThrottle = RawThrottle;
+			CurrentSteering = RawSteering;
+
+			// Also update smoothed values to match (prevents lag on input type switch)
+			SmoothedThrottle = RawThrottle;
+			SmoothedSteering = RawSteering;
+		}
+
+		// Debug: Log input type detection periodically
+		static int32 InputLogCounter = 0;
+		if (++InputLogCounter % 120 == 0)  // Every 2 seconds at 60fps
+		{
+			if (bIsAnalogInput)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[INPUT] GAMEPAD detected: Throttle=%.3f Steering=%.3f (raw analog)"),
+					CurrentThrottle, CurrentSteering);
+			}
+		}
 
 		// Read current turret rotation from tank pawn
 		AActor* Turret = ControlledTank->GetTurret_Implementation();

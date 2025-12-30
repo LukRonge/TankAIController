@@ -16,21 +16,23 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 	ULearningAgentsObservationSchema* InObservationSchema)
 {
 	// Create a struct to hold all observations
-	// SIMPLIFIED for UGV drone navigation training:
-	// - LineTraces: obstacle detection (CRITICAL for avoidance)
+	// NARROW CORRIDOR OPTIMIZED (v2.0):
+	// - LineTraces: 24 traces (increased from 16) for better wall detection
 	// - ForwardSpeed: current speed feedback
 	// - RelativeCurrentWaypointPosition: direction to navigate (LOCAL SPACE)
 	// - DistanceToCurrentWaypoint: how far to waypoint
 	// - RelativeTargetPosition: final target direction (LOCAL SPACE)
 	// - DistanceToTarget: how far to final target
-	// REMOVED: Velocity, Rotation, TurretRotation, RelativePositionToTrainer
+	// - AngularVelocityZ: yaw rate for smooth steering
+	// - LeftClearance/RightClearance: lateral wall detection
+	// - MinObstacleDistance: closest obstacle awareness
 	TMap<FName, FLearningAgentsObservationSchemaElement> ObservationElements;
 
-	// Line traces observation - array of 16 raw distances in cm (0-1500cm or max if no obstacle)
-	// Scale is set to 1500.0f (max ellipse major axis) for neural network normalization
+	// Line traces observation - array of 24 raw distances in cm (0-600cm or max if no obstacle)
+	// Scale is set to 600.0f (max ellipse major axis - REDUCED for narrow corridors)
 	// Result: 0.0 = obstacle at tank, 1.0 = clear path
 	ObservationElements.Add(TEXT("LineTraces"),
-		ULearningAgentsObservations::SpecifyContinuousObservation(InObservationSchema, 16, 1500.0f, TEXT("LineTraces")));
+		ULearningAgentsObservations::SpecifyContinuousObservation(InObservationSchema, 24, 600.0f, TEXT("LineTraces")));
 
 	// Forward speed observation - UGV drone max speed ~800-1000 cm/s (8-10 m/s)
 	// Scale = 1000.0f so normalized range is approximately -1 to 1
@@ -74,12 +76,34 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 	ObservationElements.Add(TEXT("PreviousSteering"),
 		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
 
+	// ========== NARROW CORRIDOR OBSERVATIONS (NEW) ==========
+
+	// Angular velocity Z (yaw rate) - helps AI learn smooth steering without oscillation
+	// Scale = 180.0f (max reasonable rotation rate in deg/sec)
+	ObservationElements.Add(TEXT("AngularVelocityZ"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 180.0f));
+
+	// Left wall clearance - dedicated lateral distance for corridor centering
+	// Scale = 400.0f (max lateral trace distance in cm)
+	ObservationElements.Add(TEXT("LeftClearance"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 400.0f));
+
+	// Right wall clearance - dedicated lateral distance for corridor centering
+	// Scale = 400.0f (max lateral trace distance in cm)
+	ObservationElements.Add(TEXT("RightClearance"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 400.0f));
+
+	// Minimum obstacle distance - closest danger from all traces
+	// Scale = 600.0f (same as line trace max)
+	ObservationElements.Add(TEXT("MinObstacleDistance"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 600.0f));
+
 	// Combine all observations into a struct
 	OutObservationSchemaElement = ULearningAgentsObservations::SpecifyStructObservation(
 		InObservationSchema,
 		ObservationElements);
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Observation schema specified (27 features: 16 traces + 1 speed + 3 wp_dir(manual) + 1 wp_dist + 3 target_dir(manual) + 1 target_dist + 2 temporal)."));
+	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Observation schema specified (39 features: 24 traces + 1 speed + 3 wp_dir + 1 wp_dist + 3 target_dir + 1 target_dist + 2 temporal + 4 corridor)."));
 }
 
 void UTankLearningAgentsInteractor::SpecifyAgentAction_Implementation(
@@ -232,6 +256,37 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 	ObservationElements.Add(TEXT("PreviousSteering"),
 		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, PrevSteering));
 
+	// ========== 6. NARROW CORRIDOR OBSERVATIONS (NEW) ==========
+
+	// Angular velocity Z (yaw rate in deg/sec)
+	const float AngularVelocityZ = TankController->GetAngularVelocityZ();
+	ObservationElements.Add(TEXT("AngularVelocityZ"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, AngularVelocityZ));
+
+	// Left and right wall clearance (cm)
+	const float LeftClearance = TankController->GetLeftClearance();
+	const float RightClearance = TankController->GetRightClearance();
+	ObservationElements.Add(TEXT("LeftClearance"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LeftClearance));
+	ObservationElements.Add(TEXT("RightClearance"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, RightClearance));
+
+	// Minimum obstacle distance (closest danger from all line traces + lateral)
+	// Default to max ellipse distance (600cm) then find minimum from all traces
+	float MinObstacleDistance = 600.0f;  // EllipseMajorAxis max value
+	for (float TraceDist : LineTraces)
+	{
+		if (TraceDist < MinObstacleDistance)
+		{
+			MinObstacleDistance = TraceDist;
+		}
+	}
+	// Also include lateral clearances in minimum calculation
+	MinObstacleDistance = FMath::Min(MinObstacleDistance, LeftClearance);
+	MinObstacleDistance = FMath::Min(MinObstacleDistance, RightClearance);
+	ObservationElements.Add(TEXT("MinObstacleDistance"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, MinObstacleDistance));
+
 	// ========== DEBUG LOGGING ==========
 	// LocalWaypointDir and LocalTargetDir already computed above for observations
 
@@ -241,10 +296,17 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 		UE_LOG(LogTemp, Warning, TEXT(""));
 		UE_LOG(LogTemp, Warning, TEXT("====== AGENT %d OBSERVATION DEBUG ======"), AgentId);
 
-		// Log LineTraces summary (front, right, back, left)
-		if (LineTraces.Num() >= 16)
+		// Log LineTraces summary (front, right, back, left) - adjusted for 24 traces
+		if (LineTraces.Num() >= 24)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[OBSTACLES] Front=%.0f Right=%.0f Back=%.0f Left=%.0f (cm)"),
+			// With 24 traces: 0=front, 6=right, 12=back, 18=left
+			UE_LOG(LogTemp, Warning, TEXT("[OBSTACLES] Front=%.0f Right=%.0f Back=%.0f Left=%.0f (cm) [24 traces]"),
+				LineTraces[0], LineTraces[6], LineTraces[12], LineTraces[18]);
+		}
+		else if (LineTraces.Num() >= 16)
+		{
+			// Fallback for 16 traces
+			UE_LOG(LogTemp, Warning, TEXT("[OBSTACLES] Front=%.0f Right=%.0f Back=%.0f Left=%.0f (cm) [16 traces]"),
 				LineTraces[0], LineTraces[4], LineTraces[8], LineTraces[12]);
 		}
 
@@ -261,6 +323,10 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 		// Tank state
 		UE_LOG(LogTemp, Warning, TEXT("[TANK] Speed=%.0f cm/s | PrevThrottle=%.3f | PrevSteering=%.3f"),
 			ForwardSpeed, PrevThrottle, PrevSteering);
+
+		// Narrow corridor observations
+		UE_LOG(LogTemp, Warning, TEXT("[CORRIDOR] AngVelZ=%.1f deg/s | Left=%.0fcm | Right=%.0fcm | MinDist=%.0fcm"),
+			AngularVelocityZ, LeftClearance, RightClearance, MinObstacleDistance);
 
 		// Tank orientation info
 		if (ControlledTank)

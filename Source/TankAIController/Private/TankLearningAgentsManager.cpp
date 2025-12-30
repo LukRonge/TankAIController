@@ -86,21 +86,22 @@ void ATankLearningAgentsManager::InitializeManager()
 	}
 
 	// Create Policy using factory method with EXPLICIT settings
-	// For reactive navigation task, simpler network without memory works better
+	// NARROW CORRIDOR OPTIMIZED (v2.0): Deeper and wider network for complex navigation
 	ULearningAgentsInteractor* InteractorRef = Interactor;
 
 	FLearningAgentsPolicySettings PolicySettings;
-	PolicySettings.HiddenLayerNum = 2;          // 2 hidden layers (more depth, less width)
-	PolicySettings.HiddenLayerSize = 64;        // Smaller layers to prevent overfitting
+	PolicySettings.HiddenLayerNum = 3;          // 3 hidden layers (increased for corridor complexity)
+	PolicySettings.HiddenLayerSize = 128;       // 128 neurons (increased representation capacity)
 	PolicySettings.bUseMemory = false;          // DISABLE memory - reactive task doesn't need it
 	PolicySettings.MemoryStateSize = 0;         // No memory state
-	PolicySettings.InitialEncodedActionScale = 0.1f;  // Default
-	PolicySettings.ActivationFunction = ELearningAgentsActivationFunction::ELU;  // Default
-	PolicySettings.bUseParallelEvaluation = true;  // Enable for performance
+	PolicySettings.InitialEncodedActionScale = 0.7f;  // Increased from 0.1 - allows network to output larger actions from start
+	PolicySettings.ActivationFunction = ELearningAgentsActivationFunction::ELU;  // ELU handles negative inputs well
+	PolicySettings.bUseParallelEvaluation = true;  // Enable for GPU performance
 
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Creating Policy with custom settings:"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> HiddenLayers: %d x %d neurons"), PolicySettings.HiddenLayerNum, PolicySettings.HiddenLayerSize);
+	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Creating Policy with NARROW CORRIDOR settings:"));
+	UE_LOG(LogTemp, Warning, TEXT("  -> HiddenLayers: %d x %d neurons (optimized for corridors)"), PolicySettings.HiddenLayerNum, PolicySettings.HiddenLayerSize);
 	UE_LOG(LogTemp, Warning, TEXT("  -> Memory: DISABLED (reactive task)"));
+	UE_LOG(LogTemp, Warning, TEXT("  -> Activation: ELU | Parallel: ENABLED"));
 
 	Policy = ULearningAgentsPolicy::MakePolicy(
 		ManagerRef,
@@ -412,39 +413,53 @@ void ATankLearningAgentsManager::StartTraining()
 	ImitationTrainerSettings.TrainerCommunicationTimeout = 30.0f; // 30 seconds timeout
 
 	// Configure Imitation Trainer Training Settings
-	// ADAPTIVE: Scale iterations based on sample count to prevent overfitting
+	// NARROW CORRIDOR OPTIMIZED (v2.0): Smaller batch, more iterations, adaptive LR
 	FLearningAgentsImitationTrainerTrainingSettings TrainingSettings;
 
-	// CRITICAL: Adaptive iteration count based on data size
-	// Rule of thumb: Each sample should be seen ~10-50 times max (with batching)
-	// With BatchSize=64 and 1000 samples: 1000/64 = ~16 batches per epoch
-	// Want ~50 epochs max, so iterations = samples * 50 / BatchSize = samples * 0.8
+	// IMPROVED: Adaptive iteration count based on epochs through dataset
+	// Target: ~40 epochs through the dataset
+	const int32 BatchSize = 32;  // Smaller batch = 2x more gradient updates
+	const int32 BatchesPerEpoch = FMath::Max(1, RecordedExperiencesCount / BatchSize);
+	const int32 TargetEpochs = 40;  // 40 epochs through dataset
+
 	const int32 AdaptiveIterations = FMath::Clamp(
-		RecordedExperiencesCount,  // ~1 epoch per sample
-		500,                       // Minimum: 500 iterations
-		5000                       // Maximum: 5000 iterations (prevent over-training)
+		BatchesPerEpoch * TargetEpochs,  // Iterations based on epochs
+		1500,                            // Minimum: 1500 iterations (increased from 500)
+		20000                            // Maximum: 20000 iterations (increased from 5000)
 	);
 
-	TrainingSettings.NumberOfIterations = AdaptiveIterations;
-	TrainingSettings.LearningRate = 0.001f;              // Higher LR for faster convergence (we have less iterations)
-	TrainingSettings.LearningRateDecay = 0.999f;         // Moderate decay
-	TrainingSettings.WeightDecay = 0.0001f;              // Weight decay for regularization
-	TrainingSettings.BatchSize = 64;                     // Smaller batch = more gradient updates
-	TrainingSettings.Window = 1;                         // Single frame - direct obs->action mapping
-	TrainingSettings.ActionRegularizationWeight = 0.01f; // STRONGER regularization to prevent overfitting
-	TrainingSettings.ActionEntropyWeight = 0.0f;         // No entropy (deterministic actions)
-	TrainingSettings.RandomSeed = 1234;                  // Random seed
-	TrainingSettings.Device = TrainingDevice;            // GPU/CPU (blueprint configurable)
-	TrainingSettings.bUseTensorboard = false;            // No TensorBoard
-	TrainingSettings.bSaveSnapshots = true;              // Save snapshots
-	TrainingSettings.bUseMLflow = false;                 // No MLflow
+	// ADAPTIVE LEARNING RATE: Lower for larger datasets
+	float AdaptiveLearningRate = 0.001f;
+	if (RecordedExperiencesCount > 5000)
+	{
+		AdaptiveLearningRate = 0.0005f;  // Lower for large datasets
+	}
+	if (RecordedExperiencesCount > 10000)
+	{
+		AdaptiveLearningRate = 0.0003f;  // Even lower for very large datasets
+	}
 
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: ADAPTIVE training settings:"));
+	TrainingSettings.NumberOfIterations = AdaptiveIterations;
+	TrainingSettings.LearningRate = AdaptiveLearningRate;    // Adaptive learning rate
+	TrainingSettings.LearningRateDecay = 0.9995f;            // Slower decay (was 0.999)
+	TrainingSettings.WeightDecay = 0.0001f;                  // Weight decay for regularization
+	TrainingSettings.BatchSize = BatchSize;                  // Smaller batch = more gradient updates
+	TrainingSettings.Window = 1;                             // Single frame - direct obs->action mapping
+	TrainingSettings.ActionRegularizationWeight = 0.001f;    // Reduced - was penalizing large throttle values too much
+	TrainingSettings.ActionEntropyWeight = 0.0f;             // No entropy (deterministic actions)
+	TrainingSettings.RandomSeed = 1234;                      // Random seed
+	TrainingSettings.Device = TrainingDevice;                // GPU/CPU (blueprint configurable)
+	TrainingSettings.bUseTensorboard = false;                // No TensorBoard
+	TrainingSettings.bSaveSnapshots = true;                  // Save snapshots
+	TrainingSettings.bUseMLflow = false;                     // No MLflow
+
+	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: NARROW CORRIDOR training settings:"));
 	UE_LOG(LogTemp, Warning, TEXT("  -> Samples: %d"), RecordedExperiencesCount);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Iterations: %d (adaptive, clamped 500-5000)"), AdaptiveIterations);
-	UE_LOG(LogTemp, Warning, TEXT("  -> BatchSize: %d"), TrainingSettings.BatchSize);
-	UE_LOG(LogTemp, Warning, TEXT("  -> LearningRate: %.4f"), TrainingSettings.LearningRate);
-	UE_LOG(LogTemp, Warning, TEXT("  -> ActionRegularization: %.3f"), TrainingSettings.ActionRegularizationWeight);
+	UE_LOG(LogTemp, Warning, TEXT("  -> BatchesPerEpoch: %d | TargetEpochs: %d"), BatchesPerEpoch, TargetEpochs);
+	UE_LOG(LogTemp, Warning, TEXT("  -> Iterations: %d (adaptive, clamped 1500-20000)"), AdaptiveIterations);
+	UE_LOG(LogTemp, Warning, TEXT("  -> BatchSize: %d (smaller = more gradient updates)"), TrainingSettings.BatchSize);
+	UE_LOG(LogTemp, Warning, TEXT("  -> LearningRate: %.4f (adaptive by dataset size)"), TrainingSettings.LearningRate);
+	UE_LOG(LogTemp, Warning, TEXT("  -> ActionRegularization: %.3f | LRDecay: %.4f"), TrainingSettings.ActionRegularizationWeight, TrainingSettings.LearningRateDecay);
 
 	// Configure Process Path Settings (use defaults)
 	FLearningAgentsTrainerProcessSettings PathSettings;

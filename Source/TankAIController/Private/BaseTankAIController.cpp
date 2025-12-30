@@ -40,6 +40,12 @@ void ABaseTankAIController::Tick(float DeltaTime)
 	{
 		// Perform line traces for obstacle detection
 		PerformLineTraces();
+
+		// Perform lateral traces for corridor wall detection
+		PerformLateralTraces();
+
+		// Update angular velocity for smooth steering observation
+		UpdateAngularVelocity(DeltaTime);
 	}
 }
 
@@ -256,4 +262,88 @@ FRotator ABaseTankAIController::GetTurretRotation() const
 	}
 
 	return FRotator::ZeroRotator;
+}
+
+// ========== NARROW CORRIDOR METHODS ==========
+
+void ABaseTankAIController::PerformLateralTraces()
+{
+	if (!ControlledTank || !GetWorld())
+	{
+		return;
+	}
+
+	const FVector Origin = ControlledTank->GetActorLocation();
+	const FRotator Rotation = ControlledTank->GetActorRotation();
+
+	// Calculate left and right directions (perpendicular to forward)
+	const FVector LeftDir = Rotation.RotateVector(FVector(0.0f, -1.0f, 0.0f));
+	const FVector RightDir = Rotation.RotateVector(FVector(0.0f, 1.0f, 0.0f));
+
+	// Setup trace parameters
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(ControlledTank);
+	QueryParams.bTraceComplex = false;
+
+	FHitResult HitResult;
+
+	// Left trace
+	LeftClearance = LateralTraceDistance;
+	if (GetWorld()->LineTraceSingleByChannel(
+		HitResult,
+		Origin,
+		Origin + LeftDir * LateralTraceDistance,
+		ECC_Visibility,
+		QueryParams))
+	{
+		LeftClearance = HitResult.Distance;
+	}
+
+	// Right trace
+	RightClearance = LateralTraceDistance;
+	if (GetWorld()->LineTraceSingleByChannel(
+		HitResult,
+		Origin,
+		Origin + RightDir * LateralTraceDistance,
+		ECC_Visibility,
+		QueryParams))
+	{
+		RightClearance = HitResult.Distance;
+	}
+
+	// Debug visualization
+	if (bDrawDebugTraces)
+	{
+		const FColor LeftColor = (LeftClearance < LateralTraceDistance) ? FColor::Orange : FColor::Cyan;
+		const FColor RightColor = (RightClearance < LateralTraceDistance) ? FColor::Orange : FColor::Cyan;
+
+		DrawDebugLine(GetWorld(), Origin, Origin + LeftDir * LeftClearance, LeftColor, false, -1.0f, 0, 3.0f);
+		DrawDebugLine(GetWorld(), Origin, Origin + RightDir * RightClearance, RightColor, false, -1.0f, 0, 3.0f);
+	}
+}
+
+void ABaseTankAIController::UpdateAngularVelocity(float DeltaTime)
+{
+	if (!ControlledTank || DeltaTime <= 0.0f)
+	{
+		return;
+	}
+
+	const float CurrentYaw = ControlledTank->GetActorRotation().Yaw;
+
+	// Calculate yaw delta (handles wrap-around at ±180)
+	float YawDelta = CurrentYaw - PreviousYaw;
+
+	// Normalize to -180 to 180 range
+	while (YawDelta > 180.0f) YawDelta -= 360.0f;
+	while (YawDelta < -180.0f) YawDelta += 360.0f;
+
+	// Calculate angular velocity in degrees per second
+	CurrentAngularVelocityZ = YawDelta / DeltaTime;
+
+	// Clamp to reasonable range (±360 deg/sec max)
+	CurrentAngularVelocityZ = FMath::Clamp(CurrentAngularVelocityZ, -360.0f, 360.0f);
+
+	// Store current yaw for next frame
+	PreviousYaw = CurrentYaw;
 }

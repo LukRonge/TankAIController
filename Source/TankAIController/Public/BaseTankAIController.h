@@ -52,26 +52,50 @@ protected:
 	FRotator CurrentTurretRotation;
 
 	// ========== LINE TRACES FOR OBSTACLE DETECTION ==========
+	// NARROW CORRIDOR OPTIMIZED: Increased density, reduced range
 
-	/** Number of line traces in ellipse pattern */
+	/** Number of line traces in ellipse pattern (24 for narrow corridors) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
-	int32 NumLineTraces = 16;
+	int32 NumLineTraces = 24;
 
-	/** Major axis of ellipse (forward/backward) in cm - 15 meters */
+	/** Major axis of ellipse (forward/backward) in cm - 6 meters for faster reaction */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
-	float EllipseMajorAxis = 1500.0f;
+	float EllipseMajorAxis = 600.0f;
 
-	/** Minor axis of ellipse (left/right) in cm - 7.5 meters */
+	/** Minor axis of ellipse (left/right) in cm - 3.5 meters for close wall detection */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
-	float EllipseMinorAxis = 750.0f;
+	float EllipseMinorAxis = 350.0f;
 
-	/** Line trace results - raw distance in cm to obstacle, or -1.0 if no obstacle */
+	/** Line trace results - raw distance in cm to obstacle, or max distance if no obstacle */
 	UPROPERTY(BlueprintReadOnly, Category = "Tank|LineTraces")
 	TArray<float> LineTraceDistances;
 
 	/** Whether to draw debug lines for traces */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
 	bool bDrawDebugTraces = true;
+
+	// ========== LATERAL CLEARANCE (NARROW CORRIDOR SPECIFIC) ==========
+
+	/** Distance for lateral (left/right) clearance traces in cm */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
+	float LateralTraceDistance = 400.0f;
+
+	/** Left wall clearance distance in cm */
+	UPROPERTY(BlueprintReadOnly, Category = "Tank|LineTraces")
+	float LeftClearance = 400.0f;
+
+	/** Right wall clearance distance in cm */
+	UPROPERTY(BlueprintReadOnly, Category = "Tank|LineTraces")
+	float RightClearance = 400.0f;
+
+	// ========== ANGULAR VELOCITY (FOR SMOOTH STEERING) ==========
+
+	/** Current angular velocity around Z axis (yaw rate) in degrees/second */
+	UPROPERTY(BlueprintReadOnly, Category = "Tank|AngularVelocity")
+	float CurrentAngularVelocityZ = 0.0f;
+
+	/** Previous frame's yaw for angular velocity calculation */
+	float PreviousYaw = 0.0f;
 
 	// ========== TEMPORAL CONTEXT (for ML training) ==========
 
@@ -87,6 +111,12 @@ protected:
 
 	/** Perform line traces in ellipse pattern around tank */
 	void PerformLineTraces();
+
+	/** Perform dedicated lateral traces for left/right clearance */
+	void PerformLateralTraces();
+
+	/** Update angular velocity from yaw change */
+	void UpdateAngularVelocity(float DeltaTime);
 
 	/** Generate ellipse trace points in local space */
 	TArray<FVector> GenerateEllipseTracePoints() const;
@@ -149,4 +179,22 @@ public:
 	/** Get previous frame's steering value (for ML temporal context) */
 	UFUNCTION(BlueprintPure, Category = "Tank|TemporalContext")
 	float GetPreviousSteering() const { return PreviousSteering; }
+
+	// ========== NARROW CORRIDOR OBSERVATION GETTERS ==========
+
+	/** Get angular velocity around Z axis (yaw rate) in degrees/second */
+	UFUNCTION(BlueprintPure, Category = "Tank|AngularVelocity")
+	float GetAngularVelocityZ() const { return CurrentAngularVelocityZ; }
+
+	/** Get left wall clearance distance in cm */
+	UFUNCTION(BlueprintPure, Category = "Tank|Observations")
+	float GetLeftClearance() const { return LeftClearance; }
+
+	/** Get right wall clearance distance in cm */
+	UFUNCTION(BlueprintPure, Category = "Tank|Observations")
+	float GetRightClearance() const { return RightClearance; }
+
+	/** Get lateral trace distance setting in cm */
+	UFUNCTION(BlueprintPure, Category = "Tank|Observations")
+	float GetLateralTraceDistance() const { return LateralTraceDistance; }
 };
