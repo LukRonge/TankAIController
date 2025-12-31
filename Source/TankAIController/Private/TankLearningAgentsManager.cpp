@@ -85,23 +85,35 @@ void ATankLearningAgentsManager::InitializeManager()
 		return;
 	}
 
-	// Create Policy using factory method with EXPLICIT settings
-	// NARROW CORRIDOR OPTIMIZED (v2.0): Deeper and wider network for complex navigation
+	// ========================================================================
+	// Create Policy using factory method with CONFIGURABLE settings (v4.0)
+	// ========================================================================
+	// Settings are now exposed as UPROPERTY for editor configuration
 	ULearningAgentsInteractor* InteractorRef = Interactor;
 
 	FLearningAgentsPolicySettings PolicySettings;
-	PolicySettings.HiddenLayerNum = 3;          // 3 hidden layers (increased for corridor complexity)
-	PolicySettings.HiddenLayerSize = 128;       // 128 neurons (increased representation capacity)
-	PolicySettings.bUseMemory = false;          // DISABLE memory - reactive task doesn't need it
-	PolicySettings.MemoryStateSize = 0;         // No memory state
-	PolicySettings.InitialEncodedActionScale = 0.7f;  // Increased from 0.1 - allows network to output larger actions from start
+	PolicySettings.HiddenLayerNum = HiddenLayerCount;      // Configurable (default: 3)
+	PolicySettings.HiddenLayerSize = HiddenLayerSize;      // Configurable (default: 128)
+	PolicySettings.bUseMemory = bEnableLSTMMemory;         // Configurable (default: false)
+	PolicySettings.MemoryStateSize = bEnableLSTMMemory ? LSTMMemorySize : 0;  // Only if memory enabled
+	PolicySettings.InitialEncodedActionScale = 0.7f;       // Allows larger actions from start
 	PolicySettings.ActivationFunction = ELearningAgentsActivationFunction::ELU;  // ELU handles negative inputs well
-	PolicySettings.bUseParallelEvaluation = true;  // Enable for GPU performance
+	PolicySettings.bUseParallelEvaluation = true;          // Enable for GPU performance
 
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Creating Policy with NARROW CORRIDOR settings:"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> HiddenLayers: %d x %d neurons (optimized for corridors)"), PolicySettings.HiddenLayerNum, PolicySettings.HiddenLayerSize);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Memory: DISABLED (reactive task)"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> Activation: ELU | Parallel: ENABLED"));
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: POLICY CONFIGURATION (v4.0)"));
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Warning, TEXT("  -> Network Architecture: %d hidden layers x %d neurons"),
+		PolicySettings.HiddenLayerNum, PolicySettings.HiddenLayerSize);
+	UE_LOG(LogTemp, Warning, TEXT("  -> LSTM Memory: %s"), PolicySettings.bUseMemory ? TEXT("ENABLED") : TEXT("DISABLED"));
+	if (PolicySettings.bUseMemory)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("  -> Memory State Size: %d"), PolicySettings.MemoryStateSize);
+		UE_LOG(LogTemp, Warning, TEXT("  -> NOTE: LSTM enabled - smoother steering, but requires more training data"));
+	}
+	UE_LOG(LogTemp, Warning, TEXT("  -> Activation Function: ELU"));
+	UE_LOG(LogTemp, Warning, TEXT("  -> Parallel Evaluation: ENABLED"));
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
 
 	Policy = ULearningAgentsPolicy::MakePolicy(
 		ManagerRef,
@@ -413,53 +425,96 @@ void ATankLearningAgentsManager::StartTraining()
 	ImitationTrainerSettings.TrainerCommunicationTimeout = 30.0f; // 30 seconds timeout
 
 	// Configure Imitation Trainer Training Settings
-	// NARROW CORRIDOR OPTIMIZED (v2.0): Smaller batch, more iterations, adaptive LR
+	// BALANCED TRAINING (v4.0): Dataset-adaptive parameters for optimal BC performance
 	FLearningAgentsImitationTrainerTrainingSettings TrainingSettings;
 
-	// IMPROVED: Adaptive iteration count based on epochs through dataset
-	// Target: ~40 epochs through the dataset
-	const int32 BatchSize = 32;  // Smaller batch = 2x more gradient updates
+	// ========================================================================
+	// ADAPTIVE TRAINING PARAMETERS (v4.0)
+	// ========================================================================
+	// Key insight: BC needs enough iterations to learn patterns, but not so many
+	// that it overfits. Small datasets need more epochs, large datasets need fewer.
+
+	const int32 BatchSize = 64;  // Larger batch = more stable gradients
 	const int32 BatchesPerEpoch = FMath::Max(1, RecordedExperiencesCount / BatchSize);
-	const int32 TargetEpochs = 40;  // 40 epochs through dataset
+
+	// ADAPTIVE EPOCHS: More epochs for small datasets, fewer for large
+	// Small dataset (<5000): 50 epochs - needs more passes to learn
+	// Medium dataset (5000-20000): 35 epochs - balanced
+	// Large dataset (>20000): 25 epochs - prevent overfitting
+	int32 TargetEpochs;
+	if (RecordedExperiencesCount < 5000)
+	{
+		TargetEpochs = 50;  // Small datasets need more passes
+	}
+	else if (RecordedExperiencesCount < 20000)
+	{
+		TargetEpochs = 35;  // Medium datasets
+	}
+	else
+	{
+		TargetEpochs = 25;  // Large datasets - prevent overfitting
+	}
 
 	const int32 AdaptiveIterations = FMath::Clamp(
 		BatchesPerEpoch * TargetEpochs,  // Iterations based on epochs
-		1500,                            // Minimum: 1500 iterations (increased from 500)
-		20000                            // Maximum: 20000 iterations (increased from 5000)
+		3000,                            // Minimum: 3000 iterations (increased from 2000)
+		50000                            // Maximum: 50000 iterations (increased for large datasets)
 	);
 
-	// ADAPTIVE LEARNING RATE: Lower for larger datasets
-	float AdaptiveLearningRate = 0.001f;
-	if (RecordedExperiencesCount > 5000)
+	// ADAPTIVE LEARNING RATE: Scale with dataset size
+	// Smaller datasets benefit from lower LR (less noise in gradients)
+	float AdaptiveLearningRate;
+	if (RecordedExperiencesCount < 5000)
 	{
-		AdaptiveLearningRate = 0.0005f;  // Lower for large datasets
+		AdaptiveLearningRate = 0.0003f;  // Lower LR for small datasets
 	}
-	if (RecordedExperiencesCount > 10000)
+	else if (RecordedExperiencesCount < 20000)
 	{
-		AdaptiveLearningRate = 0.0003f;  // Even lower for very large datasets
+		AdaptiveLearningRate = 0.0005f;  // Base learning rate
+	}
+	else
+	{
+		AdaptiveLearningRate = 0.0004f;  // Slightly lower for very large datasets
+	}
+
+	// ADAPTIVE WEIGHT DECAY: Lower for BC to not slow down learning
+	// BC is supervised learning - doesn't need aggressive regularization like RL
+	float AdaptiveWeightDecay;
+	if (RecordedExperiencesCount < 5000)
+	{
+		AdaptiveWeightDecay = 0.00005f;  // Minimal regularization for small datasets
+	}
+	else if (RecordedExperiencesCount < 20000)
+	{
+		AdaptiveWeightDecay = 0.0001f;   // Light regularization (BC standard)
+	}
+	else
+	{
+		AdaptiveWeightDecay = 0.0002f;   // Moderate regularization for large datasets
 	}
 
 	TrainingSettings.NumberOfIterations = AdaptiveIterations;
-	TrainingSettings.LearningRate = AdaptiveLearningRate;    // Adaptive learning rate
-	TrainingSettings.LearningRateDecay = 0.9995f;            // Slower decay (was 0.999)
-	TrainingSettings.WeightDecay = 0.0001f;                  // Weight decay for regularization
-	TrainingSettings.BatchSize = BatchSize;                  // Smaller batch = more gradient updates
+	TrainingSettings.LearningRate = AdaptiveLearningRate;
+	TrainingSettings.LearningRateDecay = 0.99995f;           // Very slow decay (smoother training)
+	TrainingSettings.WeightDecay = AdaptiveWeightDecay;      // Adaptive L2 regularization
+	TrainingSettings.BatchSize = BatchSize;
 	TrainingSettings.Window = 1;                             // Single frame - direct obs->action mapping
-	TrainingSettings.ActionRegularizationWeight = 0.001f;    // Reduced - was penalizing large throttle values too much
+	TrainingSettings.ActionRegularizationWeight = 0.0005f;   // Light action smoothing
 	TrainingSettings.ActionEntropyWeight = 0.0f;             // No entropy (deterministic actions)
-	TrainingSettings.RandomSeed = 1234;                      // Random seed
+	TrainingSettings.RandomSeed = 1234;
 	TrainingSettings.Device = TrainingDevice;                // GPU/CPU (blueprint configurable)
-	TrainingSettings.bUseTensorboard = false;                // No TensorBoard
-	TrainingSettings.bSaveSnapshots = true;                  // Save snapshots
-	TrainingSettings.bUseMLflow = false;                     // No MLflow
+	TrainingSettings.bUseTensorboard = false;
+	TrainingSettings.bSaveSnapshots = true;
+	TrainingSettings.bUseMLflow = false;
 
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: NARROW CORRIDOR training settings:"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> Samples: %d"), RecordedExperiencesCount);
-	UE_LOG(LogTemp, Warning, TEXT("  -> BatchesPerEpoch: %d | TargetEpochs: %d"), BatchesPerEpoch, TargetEpochs);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Iterations: %d (adaptive, clamped 1500-20000)"), AdaptiveIterations);
-	UE_LOG(LogTemp, Warning, TEXT("  -> BatchSize: %d (smaller = more gradient updates)"), TrainingSettings.BatchSize);
-	UE_LOG(LogTemp, Warning, TEXT("  -> LearningRate: %.4f (adaptive by dataset size)"), TrainingSettings.LearningRate);
-	UE_LOG(LogTemp, Warning, TEXT("  -> ActionRegularization: %.3f | LRDecay: %.4f"), TrainingSettings.ActionRegularizationWeight, TrainingSettings.LearningRateDecay);
+	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: BALANCED TRAINING (v4.0) settings:"));
+	UE_LOG(LogTemp, Warning, TEXT("  -> Samples: %d (%s dataset)"), RecordedExperiencesCount,
+		RecordedExperiencesCount < 5000 ? TEXT("SMALL") : (RecordedExperiencesCount < 20000 ? TEXT("MEDIUM") : TEXT("LARGE")));
+	UE_LOG(LogTemp, Warning, TEXT("  -> BatchesPerEpoch: %d | TargetEpochs: %d (adaptive)"), BatchesPerEpoch, TargetEpochs);
+	UE_LOG(LogTemp, Warning, TEXT("  -> Iterations: %d (clamped 3000-50000)"), AdaptiveIterations);
+	UE_LOG(LogTemp, Warning, TEXT("  -> BatchSize: %d"), TrainingSettings.BatchSize);
+	UE_LOG(LogTemp, Warning, TEXT("  -> LearningRate: %.5f | LRDecay: %.5f"), TrainingSettings.LearningRate, TrainingSettings.LearningRateDecay);
+	UE_LOG(LogTemp, Warning, TEXT("  -> WeightDecay: %.5f | ActionReg: %.4f"), TrainingSettings.WeightDecay, TrainingSettings.ActionRegularizationWeight);
 
 	// Configure Process Path Settings (use defaults)
 	FLearningAgentsTrainerProcessSettings PathSettings;
@@ -610,31 +665,43 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 	// Training loop - iterate training if active
 	if (ImitationTrainer && ImitationTrainer->IsTraining())
 	{
-		// Perform one training iteration
+		// Perform one training iteration (communicates with Python subprocess)
 		ImitationTrainer->IterateTraining();
 
-		// Update metrics
+		// Update frame counter (for logging purposes, not actual training iterations)
 		CurrentIteration++;
 
-		// Get loss from trainer (if available via stats)
-		// Note: UE Learning Agents doesn't expose loss directly in UE 5.6
-		// We can only track iterations for now
-		CurrentLoss = 0.0f; // TODO: Get actual loss when API supports it
-
-		// Log progress at intervals
+		// Log progress at intervals (every 100 frames = ~1.7 seconds at 60fps)
 		if (CurrentIteration % LogInterval == 0)
 		{
-			float Progress = GetTrainingProgress();
-			UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Training Progress: %d/%d iterations (%.1f%%)"),
-				CurrentIteration, TotalIterations, Progress * 100.0f);
+			// Note: Actual training iterations run in Python subprocess
+			// CurrentIteration here is frame count, not training iterations
+			// The Python process logs actual iteration progress
+			UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Training in progress... (frame %d)"), CurrentIteration);
 		}
+	}
+	else if (ImitationTrainer && CurrentIteration > 0 && !ImitationTrainer->IsTraining())
+	{
+		// Training just finished (was running, now stopped)
+		// This happens when Python subprocess completes all iterations
+		UE_LOG(LogTemp, Warning, TEXT("========================================"));
+		UE_LOG(LogTemp, Warning, TEXT("TRAINING COMPLETED BY PYTHON SUBPROCESS"));
+		UE_LOG(LogTemp, Warning, TEXT("========================================"));
+		UE_LOG(LogTemp, Warning, TEXT("  → UE frames during training: %d"), CurrentIteration);
+		UE_LOG(LogTemp, Warning, TEXT("  → Auto-saving policy..."));
 
-		// Save checkpoint at intervals
-		if (CurrentIteration % CheckpointInterval == 0)
-		{
-			FString CheckpointName = FString::Printf(TEXT("TankPolicy_Iteration_%d"), CurrentIteration);
-			SavePolicyCheckpoint(CheckpointName);
-		}
+		// Auto-save and enable inference
+		SavePolicy();
+
+		UE_LOG(LogTemp, Warning, TEXT("  → Enabling inference mode..."));
+		EnableInferenceMode();
+
+		// Reset frame counter to prevent re-triggering
+		CurrentIteration = 0;
+
+		UE_LOG(LogTemp, Warning, TEXT("========================================"));
+		UE_LOG(LogTemp, Warning, TEXT("AI TANK IS NOW READY FOR TESTING!"));
+		UE_LOG(LogTemp, Warning, TEXT("========================================"));
 	}
 
 	// Inference loop - run AI policy if agent is registered and not training
@@ -948,7 +1015,9 @@ void ATankLearningAgentsManager::SetAgentTank(AWR_Tank_Pawn* Tank)
 
 void ATankLearningAgentsManager::EnableInferenceMode()
 {
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager::EnableInferenceMode - Registering AI tank for inference"));
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager::EnableInferenceMode"));
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
 
 	// Check if AI tank is available
 	if (!AgentTank)
@@ -963,31 +1032,43 @@ void ATankLearningAgentsManager::EnableInferenceMode()
 	if (AgentAgentId != INDEX_NONE)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("EnableInferenceMode: Agent tank already registered (AgentId: %d)"), AgentAgentId);
+		UE_LOG(LogTemp, Warning, TEXT("  → Inference already active, skipping re-registration"));
 		return;
 	}
 
-	// CRITICAL: Unregister Trainer Tank before inference
+	// ========================================================================
+	// STEP 1: Load saved policy from disk
+	// ========================================================================
+	UE_LOG(LogTemp, Warning, TEXT("STEP 1: Loading trained policy from disk..."));
+	LoadPolicy();
+
+	// ========================================================================
+	// STEP 2: Unregister Trainer Tank before inference
+	// ========================================================================
 	// RunInference() processes ALL registered agents, but Trainer Tank has HumanPlayerController
 	// which cannot receive AI actions. This causes "Failed to get AIController" spam.
 	if (TrainerAgentId != INDEX_NONE && Manager)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("EnableInferenceMode: Unregistering Trainer Tank (AgentId: %d) to prevent inference conflicts..."), TrainerAgentId);
+		UE_LOG(LogTemp, Warning, TEXT("STEP 2: Unregistering Trainer Tank (AgentId: %d) to prevent inference conflicts..."), TrainerAgentId);
 		Manager->RemoveAgent(TrainerAgentId);
 		TrainerAgentId = INDEX_NONE;
 	}
 
-	// Register AI tank for inference
+	// ========================================================================
+	// STEP 3: Register AI tank for inference
+	// ========================================================================
+	UE_LOG(LogTemp, Warning, TEXT("STEP 3: Registering AI tank for inference..."));
 	RegisterAgentTank(AgentTank);
 
-	UE_LOG(LogTemp, Warning, TEXT("EnableInferenceMode: AI tank registered successfully!"));
-	UE_LOG(LogTemp, Warning, TEXT("  → AI will now receive policy actions from trained neural network"));
-	UE_LOG(LogTemp, Warning, TEXT("  → Make sure training is complete and policy is loaded"));
+	UE_LOG(LogTemp, Warning, TEXT("  → AI tank registered successfully (AgentId: %d)"), AgentAgentId);
 
-	// CRITICAL: Generate target and waypoints for AI inference
+	// ========================================================================
+	// STEP 4: Generate target and waypoints for AI inference
+	// ========================================================================
 	// Without this, the AI receives zero vectors for waypoint observations
 	if (bUseTargetBasedRecording)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("EnableInferenceMode: Generating initial target and waypoints for AI..."));
+		UE_LOG(LogTemp, Warning, TEXT("STEP 4: Generating initial target and waypoints for AI..."));
 
 		// Temporarily set TrainerTank to AgentTank for target generation
 		// (GenerateNewTarget uses TrainerTank as origin)
@@ -1001,15 +1082,18 @@ void ATankLearningAgentsManager::EnableInferenceMode()
 
 		if (bHasActiveTarget)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("EnableInferenceMode: Target and waypoints generated for AI!"));
 			UE_LOG(LogTemp, Warning, TEXT("  → Target: %s"), *CurrentTargetLocation.ToString());
 			UE_LOG(LogTemp, Warning, TEXT("  → Waypoints: %d"), CurrentWaypoints.Num());
 		}
 		else
 		{
-			UE_LOG(LogTemp, Error, TEXT("EnableInferenceMode: Failed to generate target for AI!"));
+			UE_LOG(LogTemp, Error, TEXT("  → Failed to generate target for AI!"));
 		}
 	}
+
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Warning, TEXT("INFERENCE MODE ACTIVE - AI is now driving!"));
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
 }
 
 // ========== TRAINING METRICS IMPLEMENTATION ==========
@@ -1270,16 +1354,31 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager::GenerateNewTarget: Trainer tank is null, using world origin"));
 	}
 
-	// Try multiple times to find valid NavMesh point
-	const int32 MaxRetries = 10;
+	// ========================================================================
+	// IMPROVED TARGET GENERATION (v4.0): More retries, progressive distance reduction
+	// ========================================================================
+	const int32 MaxRetries = 25;  // Increased from 10 for complex levels
 	bool bFoundLocation = false;
 	FNavLocation NavLocation;
 	FVector DesiredTargetLocation = FVector::ZeroVector;
 
+	// Progressive distance reduction: if we can't find target at max distance,
+	// try closer targets. This helps in constrained environments.
+	float CurrentMinDistance = MinTargetDistance;
+	float CurrentMaxDistance = MaxTargetDistance;
+
 	for (int32 Retry = 0; Retry < MaxRetries && !bFoundLocation; ++Retry)
 	{
-		// Generate random target within distance range
-		const float RandomDistance = FMath::RandRange(MinTargetDistance, MaxTargetDistance);
+		// Every 5 retries, reduce distance range (helps find valid points in tight spaces)
+		if (Retry > 0 && Retry % 5 == 0)
+		{
+			CurrentMaxDistance = FMath::Max(CurrentMinDistance * 1.5f, CurrentMaxDistance * 0.7f);
+			UE_LOG(LogTemp, Log, TEXT("GenerateNewTarget: Reducing search distance to %.0f-%.0f cm"),
+				CurrentMinDistance, CurrentMaxDistance);
+		}
+
+		// Generate random target within current distance range
+		const float RandomDistance = FMath::RandRange(CurrentMinDistance, CurrentMaxDistance);
 		const float RandomAngle = FMath::RandRange(0.0f, 2.0f * PI);
 
 		// Calculate desired target location (random direction at random distance)
@@ -1291,16 +1390,18 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 		DesiredTargetLocation = OriginLocation + DesiredTargetOffset;
 
 		// Project onto NavMesh to find valid reachable point
-		// Use larger search extents for better chance of finding valid point
+		// Use progressively larger search extents on retries
+		const float SearchRadius = 1000.0f + (Retry * 100.0f);  // Grows with retries
 		bFoundLocation = NavSys->ProjectPointToNavigation(
 			DesiredTargetLocation,
 			NavLocation,
-			FVector(1000.0f, 1000.0f, 500.0f)  // Search extents (10m horizontal, 5m vertical)
+			FVector(SearchRadius, SearchRadius, 500.0f)
 		);
 
 		if (!bFoundLocation && Retry < MaxRetries - 1)
 		{
-			UE_LOG(LogTemp, Log, TEXT("GenerateNewTarget: Retry %d - NavMesh projection failed, trying new location..."), Retry + 1);
+			UE_LOG(LogTemp, Log, TEXT("GenerateNewTarget: Retry %d/%d - NavMesh projection failed (search radius: %.0f)"),
+				Retry + 1, MaxRetries, SearchRadius);
 		}
 	}
 
@@ -1348,11 +1449,50 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 	}
 	else
 	{
-		// FALLBACK: Use desired location directly without NavMesh projection
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager::GenerateNewTarget: NavMesh projection failed after %d retries"), MaxRetries);
-		UE_LOG(LogTemp, Warning, TEXT("  -> Using FALLBACK: direct target location without NavMesh validation"));
+		// ========================================================================
+		// IMPROVED FALLBACK (v4.0): Try to find ANY valid NavMesh point nearby
+		// ========================================================================
+		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager::GenerateNewTarget: Random NavMesh projection failed after %d retries"), MaxRetries);
+		UE_LOG(LogTemp, Warning, TEXT("  -> Attempting SMART FALLBACK: searching for nearest NavMesh point..."));
 
-		CurrentTargetLocation = DesiredTargetLocation;
+		// SMART FALLBACK: Try to find ANY valid NavMesh point in a large radius around trainer
+		bool bFoundFallback = false;
+		const float FallbackSearchRadius = 5000.0f;  // 50m search radius
+
+		// Try 8 directions around the trainer (N, NE, E, SE, S, SW, W, NW)
+		for (int32 Direction = 0; Direction < 8 && !bFoundFallback; ++Direction)
+		{
+			const float Angle = Direction * (PI / 4.0f);  // 45 degree increments
+			const float Distance = MinTargetDistance * 1.2f;  // Just beyond minimum
+
+			const FVector DirectionalOffset = FVector(
+				FMath::Cos(Angle) * Distance,
+				FMath::Sin(Angle) * Distance,
+				0.0f
+			);
+			const FVector TestLocation = OriginLocation + DirectionalOffset;
+
+			bFoundFallback = NavSys->ProjectPointToNavigation(
+				TestLocation,
+				NavLocation,
+				FVector(FallbackSearchRadius, FallbackSearchRadius, 1000.0f)
+			);
+
+			if (bFoundFallback)
+			{
+				CurrentTargetLocation = NavLocation.Location;
+				UE_LOG(LogTemp, Warning, TEXT("  -> SMART FALLBACK SUCCESS: Found NavMesh point at direction %d"), Direction);
+			}
+		}
+
+		// If even smart fallback fails, use direct location (last resort)
+		if (!bFoundFallback)
+		{
+			UE_LOG(LogTemp, Error, TEXT("  -> SMART FALLBACK FAILED: Using direct location without NavMesh validation"));
+			UE_LOG(LogTemp, Error, TEXT("  -> WARNING: This may cause navigation issues!"));
+			CurrentTargetLocation = DesiredTargetLocation;
+		}
+
 		bHasActiveTarget = true;
 
 		// Start new segment
@@ -1366,7 +1506,8 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 		const float DistanceFromTrainer = TrainerTank ?
 			FVector::Dist(OriginLocation, CurrentTargetLocation) / 100.0f : 0.0f;
 		UE_LOG(LogTemp, Warning, TEXT("========================================"));
-		UE_LOG(LogTemp, Warning, TEXT("GENERATE NEW TARGET #%d (FALLBACK - no NavMesh)"), TargetSegments.Num() + 1);
+		UE_LOG(LogTemp, Warning, TEXT("GENERATE NEW TARGET #%d (%s)"), TargetSegments.Num() + 1,
+			bFoundFallback ? TEXT("SMART FALLBACK") : TEXT("DIRECT FALLBACK"));
 		UE_LOG(LogTemp, Warning, TEXT("  Target Location: %s"), *CurrentTargetLocation.ToString());
 		UE_LOG(LogTemp, Warning, TEXT("  Distance from Trainer: %.2fm"), DistanceFromTrainer);
 		UE_LOG(LogTemp, Warning, TEXT("  Reach Radius: %.2fm"), TargetReachRadius / 100.0f);

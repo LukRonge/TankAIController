@@ -13,25 +13,25 @@ void AAILearningAgentsController::BeginPlay()
 	Super::BeginPlay();
 	// Base class handles tank possession
 
-	UE_LOG(LogTemp, Log, TEXT("AAILearningAgentsController: Safety features initialized"));
-	UE_LOG(LogTemp, Log, TEXT("  -> ObstacleProximityThrottle: %s"), bEnableObstacleProximityThrottle ? TEXT("ENABLED") : TEXT("DISABLED"));
-	UE_LOG(LogTemp, Log, TEXT("  -> MaxThrottleLimit: %.2f"), MaxThrottleLimit);
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Warning, TEXT("AAILearningAgentsController: Safety Configuration"));
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Warning, TEXT("  -> ObstacleProximityThrottle: %s"), bEnableObstacleProximityThrottle ? TEXT("ENABLED") : TEXT("DISABLED"));
+	if (bEnableObstacleProximityThrottle)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("  -> SlowdownStart: %.0f cm | SlowdownEnd: %.0f cm"), ObstacleSlowdownStartDistance, ObstacleSlowdownEndDistance);
+		UE_LOG(LogTemp, Warning, TEXT("  -> MinThrottleMult: %.2f | MaxThrottle: %.2f"), MinThrottleMultiplier, MaxThrottleLimit);
+		UE_LOG(LogTemp, Warning, TEXT("  -> WARNING: Safety limiting may cause training/inference mismatch!"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("  -> MaxThrottleLimit: %.2f (no proximity reduction)"), MaxThrottleLimit);
+	}
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
 }
 
 void AAILearningAgentsController::Tick(float DeltaTime)
 {
-	// ========================================================================
-	// TEMPORAL CONTEXT: Update Previous at START of frame
-	// ========================================================================
-	// CurrentThrottle/Steering was set by SetThrottleFromAI in PREVIOUS frame.
-	// Save it as Previous so GatherObs (in Manager::Tick later) sees correct value.
-	//
-	// Timeline:
-	// Frame N-1: SetThrottleFromAI(A) sets Current = A
-	// Frame N:   Tick: Previous = A, then GatherObs sees Previous = A ✓
-	PreviousThrottle = CurrentThrottle;
-	PreviousSteering = CurrentSteering;
-
 	Super::Tick(DeltaTime);
 
 	// ========================================================================

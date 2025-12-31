@@ -90,10 +90,6 @@ void AHumanPlayerController::Tick(float DeltaTime)
 	// gamepad (analog) input and skip smoothing to preserve raw analog values.
 	if (ControlledTank)
 	{
-		// Save previous values BEFORE updating (for temporal context in observations)
-		PreviousThrottle = CurrentThrottle;
-		PreviousSteering = CurrentSteering;
-
 		// Read RAW input from tank pawn
 		const float RawThrottle = ControlledTank->GetTankThrottle_Implementation();
 		const float RawSteering = ControlledTank->GetTankSteering_Implementation();
@@ -299,3 +295,4 @@ ATankLearningAgentsManager* AHumanPlayerController::GetLearningAgentsManager()
 
 	return nullptr;
 }
+

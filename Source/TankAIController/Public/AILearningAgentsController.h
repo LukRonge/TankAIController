@@ -24,26 +24,29 @@ public:
 	AAILearningAgentsController();
 
 	// ========== SAFETY SETTINGS ==========
+	// WARNING: Aggressive safety limits cause TRAINING/INFERENCE MISMATCH!
+	// Human records with full throttle, but AI gets limited → AI learns wrong behavior.
+	// Keep these settings minimal or disabled for best results.
 
 	/** Enable obstacle proximity throttle reduction (slows down near walls) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Safety")
-	bool bEnableObstacleProximityThrottle = true;
+	bool bEnableObstacleProximityThrottle = false;  // DISABLED - causes distribution mismatch
 
 	/** Distance at which throttle reduction starts (cm) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Safety", meta = (ClampMin = "50", ClampMax = "500"))
-	float ObstacleSlowdownStartDistance = 200.0f;
+	float ObstacleSlowdownStartDistance = 100.0f;  // Reduced from 200
 
 	/** Distance at which throttle is fully reduced (cm) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Safety", meta = (ClampMin = "20", ClampMax = "200"))
-	float ObstacleSlowdownEndDistance = 50.0f;
+	float ObstacleSlowdownEndDistance = 30.0f;  // Reduced from 50
 
 	/** Minimum throttle multiplier when close to obstacles (0-1) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Safety", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float MinThrottleMultiplier = 0.3f;
+	float MinThrottleMultiplier = 0.6f;  // Increased from 0.3
 
 	/** Maximum throttle the AI can apply (0-1, useful for testing) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Safety", meta = (ClampMin = "0.1", ClampMax = "1.0"))
-	float MaxThrottleLimit = 0.7f;
+	float MaxThrottleLimit = 1.0f;  // Increased from 0.7 - allow full throttle
 
 protected:
 	virtual void BeginPlay() override;

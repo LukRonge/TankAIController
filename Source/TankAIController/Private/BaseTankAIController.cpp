@@ -165,10 +165,6 @@ void ABaseTankAIController::ApplyMovementToTank(float Throttle, float Steering)
 		return;
 	}
 
-	// NOTE: PreviousThrottle/PreviousSteering are updated in subclass Tick methods:
-	// - HumanPlayerController::Tick updates before smoothing
-	// - AILearningAgentsController::SetThrottleFromAI/SetSteeringFromAI updates before current
-
 	// Update current values
 	CurrentThrottle = Throttle;
 	CurrentSteering = Steering;

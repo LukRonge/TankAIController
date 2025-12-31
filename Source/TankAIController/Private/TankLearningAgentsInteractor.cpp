@@ -67,16 +67,7 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 	ObservationElements.Add(TEXT("DistanceToTarget"),
 		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 10000.0f));
 
-	// ========== TEMPORAL CONTEXT (helps model learn action sequences) ==========
-	// Previous frame's throttle - scale 1.0 (already in -1 to 1 range)
-	ObservationElements.Add(TEXT("PreviousThrottle"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
-
-	// Previous frame's steering - scale 1.0 (already in -1 to 1 range)
-	ObservationElements.Add(TEXT("PreviousSteering"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
-
-	// ========== NARROW CORRIDOR OBSERVATIONS (NEW) ==========
+	// ========== NARROW CORRIDOR OBSERVATIONS ==========
 
 	// Angular velocity Z (yaw rate) - helps AI learn smooth steering without oscillation
 	// Scale = 180.0f (max reasonable rotation rate in deg/sec)
@@ -98,12 +89,26 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 	ObservationElements.Add(TEXT("MinObstacleDistance"),
 		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 600.0f));
 
+	// ========== VELOCITY ALIGNMENT (v4.0 - CRITICAL for navigation quality) ==========
+	// Dot product of velocity direction with waypoint direction
+	// +1.0 = moving directly toward waypoint (perfect)
+	// 0.0 = moving perpendicular to waypoint
+	// -1.0 = moving away from waypoint (bad)
+	// This helps the AI understand if its current movement is productive
+	ObservationElements.Add(TEXT("VelocityWaypointAlignment"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
+
+	// Velocity magnitude relative to max speed (0-1 normalized)
+	// Helps AI correlate throttle input with actual movement
+	ObservationElements.Add(TEXT("NormalizedSpeed"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
+
 	// Combine all observations into a struct
 	OutObservationSchemaElement = ULearningAgentsObservations::SpecifyStructObservation(
 		InObservationSchema,
 		ObservationElements);
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Observation schema specified (39 features: 24 traces + 1 speed + 3 wp_dir + 1 wp_dist + 3 target_dir + 1 target_dist + 2 temporal + 4 corridor)."));
+	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Observation schema specified (39 features: 24 traces + 1 speed + 3 wp_dir + 1 wp_dist + 3 target_dir + 1 target_dist + 4 corridor + 2 velocity)."));
 }
 
 void UTankLearningAgentsInteractor::SpecifyAgentAction_Implementation(
@@ -161,7 +166,7 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 	TMap<FName, FLearningAgentsObservationObjectElement> ObservationElements;
 
 	// ========== 1. LINE TRACES (CRITICAL for obstacle avoidance) ==========
-	// 16 distances in cm, normalized by schema scale 1500.0f
+	// 24 distances in cm, normalized by schema scale 600.0f
 	// Result: 0.0 = obstacle at tank, 1.0 = clear path
 	const TArray<float>& LineTraces = TankController->GetLineTraceDistances();
 	ObservationElements.Add(TEXT("LineTraces"),
@@ -246,17 +251,7 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 	ObservationElements.Add(TEXT("DistanceToTarget"),
 		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, DistanceToTarget));
 
-	// ========== 5. TEMPORAL CONTEXT (helps model learn action sequences) ==========
-	const float PrevThrottle = TankController->GetPreviousThrottle();
-	const float PrevSteering = TankController->GetPreviousSteering();
-
-	ObservationElements.Add(TEXT("PreviousThrottle"),
-		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, PrevThrottle));
-
-	ObservationElements.Add(TEXT("PreviousSteering"),
-		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, PrevSteering));
-
-	// ========== 6. NARROW CORRIDOR OBSERVATIONS (NEW) ==========
+	// ========== 5. NARROW CORRIDOR OBSERVATIONS ==========
 
 	// Angular velocity Z (yaw rate in deg/sec)
 	const float AngularVelocityZ = TankController->GetAngularVelocityZ();
@@ -286,6 +281,36 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 	MinObstacleDistance = FMath::Min(MinObstacleDistance, RightClearance);
 	ObservationElements.Add(TEXT("MinObstacleDistance"),
 		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, MinObstacleDistance));
+
+	// ========== 7. VELOCITY ALIGNMENT (v4.0 - CRITICAL) ==========
+	// Calculate how well the tank is moving toward the waypoint
+	float VelocityWaypointAlignment = 0.0f;
+	float NormalizedSpeed = 0.0f;
+
+	if (ControlledTank)
+	{
+		const FVector Velocity = ControlledTank->GetVelocity();
+		const float Speed = Velocity.Size();
+
+		// Normalized speed (0-1, where 1000 cm/s = 1.0)
+		const float MaxExpectedSpeed = 1000.0f;  // 10 m/s max expected
+		NormalizedSpeed = FMath::Clamp(Speed / MaxExpectedSpeed, 0.0f, 1.0f);
+
+		// Velocity alignment with waypoint direction
+		if (Speed > 10.0f && !DirectionToWaypoint.IsNearlyZero())  // Only if moving and has target
+		{
+			const FVector VelocityDir = Velocity.GetSafeNormal();
+			// Dot product: +1 = toward, 0 = perpendicular, -1 = away
+			VelocityWaypointAlignment = FVector::DotProduct(VelocityDir, DirectionToWaypoint);
+		}
+		// If not moving or no waypoint, alignment is 0 (neutral)
+	}
+
+	ObservationElements.Add(TEXT("VelocityWaypointAlignment"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, VelocityWaypointAlignment));
+
+	ObservationElements.Add(TEXT("NormalizedSpeed"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, NormalizedSpeed));
 
 	// ========== DEBUG LOGGING ==========
 	// LocalWaypointDir and LocalTargetDir already computed above for observations
@@ -321,12 +346,18 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 			WpFrontBack, WpLeftRight, DistanceToWaypoint / 100.0f);
 
 		// Tank state
-		UE_LOG(LogTemp, Warning, TEXT("[TANK] Speed=%.0f cm/s | PrevThrottle=%.3f | PrevSteering=%.3f"),
-			ForwardSpeed, PrevThrottle, PrevSteering);
+		UE_LOG(LogTemp, Warning, TEXT("[TANK] Speed=%.0f cm/s"), ForwardSpeed);
 
 		// Narrow corridor observations
 		UE_LOG(LogTemp, Warning, TEXT("[CORRIDOR] AngVelZ=%.1f deg/s | Left=%.0fcm | Right=%.0fcm | MinDist=%.0fcm"),
 			AngularVelocityZ, LeftClearance, RightClearance, MinObstacleDistance);
+
+		// Velocity alignment (v4.0)
+		const TCHAR* AlignmentQuality = (VelocityWaypointAlignment > 0.7f) ? TEXT("GOOD") :
+			((VelocityWaypointAlignment > 0.3f) ? TEXT("OK") :
+			((VelocityWaypointAlignment > -0.3f) ? TEXT("POOR") : TEXT("WRONG WAY")));
+		UE_LOG(LogTemp, Warning, TEXT("[VELOCITY] Alignment=%.2f (%s) | NormSpeed=%.2f"),
+			VelocityWaypointAlignment, AlignmentQuality, NormalizedSpeed);
 
 		// Tank orientation info
 		if (ControlledTank)

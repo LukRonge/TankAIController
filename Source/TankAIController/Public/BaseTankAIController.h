@@ -97,16 +97,6 @@ protected:
 	/** Previous frame's yaw for angular velocity calculation */
 	float PreviousYaw = 0.0f;
 
-	// ========== TEMPORAL CONTEXT (for ML training) ==========
-
-	/** Previous frame's throttle value (for temporal context in ML observations) */
-	UPROPERTY(BlueprintReadOnly, Category = "Tank|TemporalContext")
-	float PreviousThrottle = 0.0f;
-
-	/** Previous frame's steering value (for temporal context in ML observations) */
-	UPROPERTY(BlueprintReadOnly, Category = "Tank|TemporalContext")
-	float PreviousSteering = 0.0f;
-
 	// ========== METHODS ==========
 
 	/** Perform line traces in ellipse pattern around tank */
@@ -169,16 +159,6 @@ public:
 	/** Get current turret rotation value */
 	UFUNCTION(BlueprintPure, Category = "Tank|Observations")
 	FRotator GetCurrentTurretRotation() const { return CurrentTurretRotation; }
-
-	// ========== TEMPORAL CONTEXT GETTERS ==========
-
-	/** Get previous frame's throttle value (for ML temporal context) */
-	UFUNCTION(BlueprintPure, Category = "Tank|TemporalContext")
-	float GetPreviousThrottle() const { return PreviousThrottle; }
-
-	/** Get previous frame's steering value (for ML temporal context) */
-	UFUNCTION(BlueprintPure, Category = "Tank|TemporalContext")
-	float GetPreviousSteering() const { return PreviousSteering; }
 
 	// ========== NARROW CORRIDOR OBSERVATION GETTERS ==========
 

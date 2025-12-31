@@ -133,6 +133,38 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank Learning Agents|Config")
 	FString PolicySavePath = TEXT("LearningAgents/Policies/TankPolicy.policy");
 
+	// ========== ADVANCED NEURAL NETWORK SETTINGS (v4.0) ==========
+
+	/**
+	 * Enable LSTM memory in the policy network
+	 * Pros: Smoother steering, better temporal reasoning, can learn sequences
+	 * Cons: Slower training, higher memory usage, requires more training data
+	 * Recommended: Enable for complex navigation, disable for simple reactive tasks
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank Learning Agents|Advanced")
+	bool bEnableLSTMMemory = false;
+
+	/**
+	 * LSTM memory state size (only used if bEnableLSTMMemory is true)
+	 * Higher = more capacity but slower. Recommended: 32-128
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank Learning Agents|Advanced", meta = (EditCondition = "bEnableLSTMMemory", ClampMin = "16", ClampMax = "256"))
+	int32 LSTMMemorySize = 64;
+
+	/**
+	 * Number of hidden layers in the policy network
+	 * More layers = more capacity but slower training. Recommended: 2-4
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank Learning Agents|Advanced", meta = (ClampMin = "1", ClampMax = "6"))
+	int32 HiddenLayerCount = 3;
+
+	/**
+	 * Number of neurons per hidden layer
+	 * More neurons = more capacity. Recommended: 64-256
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank Learning Agents|Advanced", meta = (ClampMin = "32", ClampMax = "512"))
+	int32 HiddenLayerSize = 128;
+
 	// ========== GETTERS ==========
 
 	/** Get the interactor component */
