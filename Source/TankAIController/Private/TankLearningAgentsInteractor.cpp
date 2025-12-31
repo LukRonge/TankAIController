@@ -103,12 +103,32 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 	ObservationElements.Add(TEXT("NormalizedSpeed"),
 		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
 
+	// ========== HEADING ERROR (v5.0 - Research-based improvement) ==========
+	// Angle between tank's forward direction and direction to waypoint
+	// Range: -PI to +PI radians, normalized by PI to get -1 to +1
+	// 0 = facing waypoint perfectly
+	// +1 = waypoint is directly to the right (need to turn right)
+	// -1 = waypoint is directly to the left (need to turn left)
+	// This is THE MOST DIRECT signal for steering control
+	ObservationElements.Add(TEXT("HeadingError"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
+
+	// ========== TRACK CENTERING (v5.0 - Research-based improvement) ==========
+	// Normalized difference between right and left clearance
+	// Range: -1 to +1
+	// 0 = perfectly centered in corridor
+	// +1 = too close to left wall (need to steer right)
+	// -1 = too close to right wall (need to steer left)
+	// Helps AI maintain center position in narrow corridors
+	ObservationElements.Add(TEXT("TrackCentering"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
+
 	// Combine all observations into a struct
 	OutObservationSchemaElement = ULearningAgentsObservations::SpecifyStructObservation(
 		InObservationSchema,
 		ObservationElements);
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Observation schema specified (39 features: 24 traces + 1 speed + 3 wp_dir + 1 wp_dist + 3 target_dir + 1 target_dist + 4 corridor + 2 velocity)."));
+	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Observation schema specified (41 features: 24 traces + 1 speed + 3 wp_dir + 1 wp_dist + 3 target_dir + 1 target_dist + 4 corridor + 2 velocity + 2 navigation)."));
 }
 
 void UTankLearningAgentsInteractor::SpecifyAgentAction_Implementation(
@@ -312,6 +332,38 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 	ObservationElements.Add(TEXT("NormalizedSpeed"),
 		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, NormalizedSpeed));
 
+	// ========== 8. HEADING ERROR (v5.0 - Research-based) ==========
+	// Calculate angle between tank forward and waypoint direction
+	// Using atan2 on LocalWaypointDir gives us the angle directly
+	// LocalWaypointDir.Y = right component, LocalWaypointDir.X = forward component
+	// atan2(Y, X) gives angle from forward axis: positive = right, negative = left
+	float HeadingError = 0.0f;
+	if (!LocalWaypointDir.IsNearlyZero())
+	{
+		// atan2 returns radians in range -PI to +PI
+		// Normalize by PI to get -1 to +1 range
+		HeadingError = FMath::Atan2(LocalWaypointDir.Y, LocalWaypointDir.X) / PI;
+	}
+	ObservationElements.Add(TEXT("HeadingError"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, HeadingError));
+
+	// ========== 9. TRACK CENTERING (v5.0 - Research-based) ==========
+	// Calculate how off-center the tank is in the corridor
+	// (RightClearance - LeftClearance) / MaxClearance
+	// Positive = more space on right (too close to left wall) -> steer right
+	// Negative = more space on left (too close to right wall) -> steer left
+	// Zero = centered
+	const float MaxLateralClearance = TankController->GetLateralTraceDistance();
+	float TrackCentering = 0.0f;
+	if (MaxLateralClearance > 0.0f)
+	{
+		TrackCentering = (RightClearance - LeftClearance) / MaxLateralClearance;
+		// Clamp to -1 to +1 range
+		TrackCentering = FMath::Clamp(TrackCentering, -1.0f, 1.0f);
+	}
+	ObservationElements.Add(TEXT("TrackCentering"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, TrackCentering));
+
 	// ========== DEBUG LOGGING ==========
 	// LocalWaypointDir and LocalTargetDir already computed above for observations
 
@@ -358,6 +410,14 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 			((VelocityWaypointAlignment > -0.3f) ? TEXT("POOR") : TEXT("WRONG WAY")));
 		UE_LOG(LogTemp, Warning, TEXT("[VELOCITY] Alignment=%.2f (%s) | NormSpeed=%.2f"),
 			VelocityWaypointAlignment, AlignmentQuality, NormalizedSpeed);
+
+		// Navigation signals (v5.0)
+		const TCHAR* HeadingStatus = (FMath::Abs(HeadingError) < 0.1f) ? TEXT("ON TARGET") :
+			((HeadingError > 0) ? TEXT("TURN RIGHT") : TEXT("TURN LEFT"));
+		const TCHAR* CenteringStatus = (FMath::Abs(TrackCentering) < 0.1f) ? TEXT("CENTERED") :
+			((TrackCentering > 0) ? TEXT("STEER RIGHT") : TEXT("STEER LEFT"));
+		UE_LOG(LogTemp, Warning, TEXT("[NAVIGATION] HeadingError=%.2f (%s) | TrackCentering=%.2f (%s)"),
+			HeadingError, HeadingStatus, TrackCentering, CenteringStatus);
 
 		// Tank orientation info
 		if (ControlledTank)
