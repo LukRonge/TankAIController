@@ -140,27 +140,32 @@ public:
 	 * Pros: Smoother steering, better temporal reasoning, can learn sequences
 	 * Cons: Slower training, higher memory usage, requires more training data
 	 * Recommended: Enable for complex navigation, disable for simple reactive tasks
+	 * v3.1: ENABLED by default - critical for learning input relationships as a whole
 	 */
+	// v8.2: LSTM disabled - simple feedforward is sufficient for reactive tank navigation
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank Learning Agents|Advanced")
 	bool bEnableLSTMMemory = false;
 
 	/**
 	 * LSTM memory state size (only used if bEnableLSTMMemory is true)
-	 * Higher = more capacity but slower. Recommended: 32-128
+	 * Higher = more capacity but slower. Recommended: 64-128
+	 * v3.1: Increased to 128 for better temporal context
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank Learning Agents|Advanced", meta = (EditCondition = "bEnableLSTMMemory", ClampMin = "16", ClampMax = "256"))
-	int32 LSTMMemorySize = 64;
+	int32 LSTMMemorySize = 128;
 
 	/**
 	 * Number of hidden layers in the policy network
-	 * More layers = more capacity but slower training. Recommended: 2-4
+	 * More layers = more capacity but slower training. Recommended: 2-3
+	 * v8.0: Reduced to 3 - prevents overfitting with 160k frames
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank Learning Agents|Advanced", meta = (ClampMin = "1", ClampMax = "6"))
 	int32 HiddenLayerCount = 3;
 
 	/**
 	 * Number of neurons per hidden layer
-	 * More neurons = more capacity. Recommended: 64-256
+	 * More neurons = more capacity. Recommended: 64-128
+	 * v8.0: Reduced to 128 - optimal for 40 input features, reduces overfitting
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank Learning Agents|Advanced", meta = (ClampMin = "32", ClampMax = "512"))
 	int32 HiddenLayerSize = 128;
@@ -235,9 +240,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Tank Learning Agents|Metrics")
 	float GetTrainingProgress() const;
 
-	/** Get total training iterations target */
+	/** Get total training iterations target (Python iterations - internal use) */
 	UFUNCTION(BlueprintPure, Category = "Tank Learning Agents|Metrics")
 	int32 GetTotalIterations() const { return TotalIterations; }
+
+	/** Get total expected UE frames for progress display (v8.3 fix) */
+	UFUNCTION(BlueprintPure, Category = "Tank Learning Agents|Metrics")
+	int32 GetTotalExpectedFrames() const { return TotalExpectedFrames; }
 
 	/** Get number of recorded experiences */
 	UFUNCTION(BlueprintPure, Category = "Tank Learning Agents|Metrics")
@@ -306,8 +315,11 @@ private:
 	/** Current training loss value */
 	float CurrentLoss = 0.0f;
 
-	/** Total number of iterations for training */
+	/** Total number of iterations for training (Python iterations) */
 	int32 TotalIterations = 100000;
+
+	/** v8.0 FIX: Total expected UE frames for accurate progress tracking */
+	int32 TotalExpectedFrames = 0;
 
 	/** Log interval for training progress (every N iterations) */
 	UPROPERTY(EditAnywhere, Category = "Tank Learning Agents|Metrics")
@@ -321,6 +333,42 @@ private:
 
 	/** Number of recorded experiences (frames) - incremented on each AddExperience() */
 	int32 RecordedExperiencesCount = 0;
+
+	// ========== DATA DIVERSITY TRACKING (v7.0) ==========
+	// Tracks input distribution during recording to detect potential training issues
+
+	/** Frames with forward throttle (> 0.1) */
+	int32 ForwardFrames = 0;
+
+	/** Frames with backward throttle (< -0.1) */
+	int32 BackwardFrames = 0;
+
+	/** Frames with no throttle (between -0.1 and 0.1) */
+	int32 IdleFrames = 0;
+
+	/** Frames with left steering (< -0.1) */
+	int32 LeftSteeringFrames = 0;
+
+	/** Frames with right steering (> 0.1) */
+	int32 RightSteeringFrames = 0;
+
+	/** Frames with straight steering (between -0.1 and 0.1) */
+	int32 StraightFrames = 0;
+
+	/** Accumulated throttle values for mean calculation */
+	float ThrottleSum = 0.0f;
+
+	/** Accumulated steering values for mean calculation */
+	float SteeringSum = 0.0f;
+
+	/** Reset diversity tracking counters */
+	void ResetDiversityTracking();
+
+	/** Update diversity tracking with current frame's actions */
+	void UpdateDiversityTracking(float Throttle, float Steering);
+
+	/** Validate and log data diversity warnings */
+	void ValidateDataDiversity();
 
 	// ========== TARGET-BASED RECORDING SYSTEM ==========
 

@@ -123,6 +123,13 @@ void AAILearningAgentsController::SetBrakeFromAI(float Value)
 
 void AAILearningAgentsController::SetTurretRotationFromAI(float Yaw, float Pitch)
 {
-	CurrentTurretRotation = FRotator(Pitch, Yaw, 0.0f);
-	ApplyTurretRotationToTank(CurrentTurretRotation);
+	// Store current turret rotation for observation (converted from normalized to degrees)
+	CurrentTurretRotation = FRotator(Pitch * 45.0f, Yaw * 180.0f, 0.0f);
+
+	// Apply turret rotation via the new AI-specific method
+	// Yaw and Pitch are normalized values (-1 to 1) representing relative orientation
+	if (ControlledTank)
+	{
+		ControlledTank->SetAITurretInput(Yaw, Pitch);
+	}
 }

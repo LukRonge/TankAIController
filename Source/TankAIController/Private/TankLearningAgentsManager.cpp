@@ -3,6 +3,7 @@
 #include "TankLearningAgentsManager.h"
 #include "TankLearningAgentsInteractor.h"
 #include "TankLearningAgentsTrainer.h"
+#include "BaseTankAIController.h"
 #include "LearningAgentsManager.h"
 #include "LearningAgentsPolicy.h"
 #include "LearningAgentsImitationTrainer.h"
@@ -282,6 +283,9 @@ void ATankLearningAgentsManager::StartRecording()
 	// Reset recorded experiences counter
 	RecordedExperiencesCount = 0;
 
+	// Reset data diversity tracking (v7.0)
+	ResetDiversityTracking();
+
 	// Begin recording demonstrations from all agents
 	Recorder->BeginRecording();
 	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Started recording demonstrations from trainer tank."));
@@ -367,6 +371,9 @@ void ATankLearningAgentsManager::StopRecording()
 	// End recording
 	Recorder->EndRecording();
 
+	// Validate data diversity before training (v7.0)
+	ValidateDataDiversity();
+
 	// Final recording summary
 	UE_LOG(LogTemp, Warning, TEXT("========================================"));
 	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: RECORDING COMPLETE"));
@@ -431,38 +438,36 @@ void ATankLearningAgentsManager::StartTraining()
 	// ========================================================================
 	// ADAPTIVE TRAINING PARAMETERS (v4.0)
 	// ========================================================================
-	// Key insight: BC needs enough iterations to learn patterns, but not so many
-	// that it overfits. Small datasets need more epochs, large datasets need fewer.
+	// v8.4: Optimized for 200k frames, ~40 min training
+	// Based on BC research and UE5 Learning Agents documentation
 
-	const int32 BatchSize = 64;  // Larger batch = more stable gradients
+	const int32 BatchSize = 16;  // v8.4: Smaller batch = more iterations = better generalization
 	const int32 BatchesPerEpoch = FMath::Max(1, RecordedExperiencesCount / BatchSize);
 
 	// ADAPTIVE EPOCHS: More epochs for small datasets, fewer for large
-	// Small dataset (<5000): 50 epochs - needs more passes to learn
-	// Medium dataset (5000-20000): 35 epochs - balanced
-	// Large dataset (>20000): 25 epochs - prevent overfitting
+	// v8.4: Increased to 10 for large datasets (BC research: 20-50 epochs typical)
 	int32 TargetEpochs;
 	if (RecordedExperiencesCount < 5000)
 	{
-		TargetEpochs = 50;  // Small datasets need more passes
+		TargetEpochs = 15;  // Small datasets - need more passes
 	}
 	else if (RecordedExperiencesCount < 20000)
 	{
-		TargetEpochs = 35;  // Medium datasets
+		TargetEpochs = 12;  // Medium datasets
 	}
 	else
 	{
-		TargetEpochs = 25;  // Large datasets - prevent overfitting
+		TargetEpochs = 10;  // Large datasets - 10 epochs for thorough learning
 	}
 
 	const int32 AdaptiveIterations = FMath::Clamp(
 		BatchesPerEpoch * TargetEpochs,  // Iterations based on epochs
-		3000,                            // Minimum: 3000 iterations (increased from 2000)
-		50000                            // Maximum: 50000 iterations (increased for large datasets)
+		1000,                            // Minimum: 1000 iterations
+		150000                           // Maximum: 150000 iterations (v8.4: for 200k+ frames @ batch16)
 	);
 
 	// ADAPTIVE LEARNING RATE: Scale with dataset size
-	// Smaller datasets benefit from lower LR (less noise in gradients)
+	// v8.4: Lowered for stability with longer training
 	float AdaptiveLearningRate;
 	if (RecordedExperiencesCount < 5000)
 	{
@@ -470,36 +475,32 @@ void ATankLearningAgentsManager::StartTraining()
 	}
 	else if (RecordedExperiencesCount < 20000)
 	{
-		AdaptiveLearningRate = 0.0005f;  // Base learning rate
+		AdaptiveLearningRate = 0.0003f;  // Same for medium (stability)
 	}
 	else
 	{
-		AdaptiveLearningRate = 0.0004f;  // Slightly lower for very large datasets
+		AdaptiveLearningRate = 0.0003f;  // v8.4: Lowered from 0.0004 for long training stability
 	}
 
 	// ADAPTIVE WEIGHT DECAY: Lower for BC to not slow down learning
-	// BC is supervised learning - doesn't need aggressive regularization like RL
+	// v8.4: Unified to 0.0001 - BC standard, doesn't slow learning
 	float AdaptiveWeightDecay;
 	if (RecordedExperiencesCount < 5000)
 	{
 		AdaptiveWeightDecay = 0.00005f;  // Minimal regularization for small datasets
 	}
-	else if (RecordedExperiencesCount < 20000)
-	{
-		AdaptiveWeightDecay = 0.0001f;   // Light regularization (BC standard)
-	}
 	else
 	{
-		AdaptiveWeightDecay = 0.0002f;   // Moderate regularization for large datasets
+		AdaptiveWeightDecay = 0.0001f;   // v8.4: BC standard for medium/large datasets
 	}
 
 	TrainingSettings.NumberOfIterations = AdaptiveIterations;
 	TrainingSettings.LearningRate = AdaptiveLearningRate;
-	TrainingSettings.LearningRateDecay = 0.99995f;           // Very slow decay (smoother training)
+	TrainingSettings.LearningRateDecay = 0.99998f;           // v8.4: Slower decay for long training (0.99998^150k = 5%)
 	TrainingSettings.WeightDecay = AdaptiveWeightDecay;      // Adaptive L2 regularization
 	TrainingSettings.BatchSize = BatchSize;
-	TrainingSettings.Window = 1;                             // Single frame - direct obs->action mapping
-	TrainingSettings.ActionRegularizationWeight = 0.0005f;   // Light action smoothing
+	TrainingSettings.Window = 1;                             // v8.2: No LSTM = no sequence needed
+	TrainingSettings.ActionRegularizationWeight = 0.001f;    // v8.4: Increased slightly for smoother actions
 	TrainingSettings.ActionEntropyWeight = 0.0f;             // No entropy (deterministic actions)
 	TrainingSettings.RandomSeed = 1234;
 	TrainingSettings.Device = TrainingDevice;                // GPU/CPU (blueprint configurable)
@@ -507,12 +508,14 @@ void ATankLearningAgentsManager::StartTraining()
 	TrainingSettings.bSaveSnapshots = true;
 	TrainingSettings.bUseMLflow = false;
 
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: BALANCED TRAINING (v4.0) settings:"));
+	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: OPTIMIZED TRAINING (v8.4) settings:"));
 	UE_LOG(LogTemp, Warning, TEXT("  -> Samples: %d (%s dataset)"), RecordedExperiencesCount,
 		RecordedExperiencesCount < 5000 ? TEXT("SMALL") : (RecordedExperiencesCount < 20000 ? TEXT("MEDIUM") : TEXT("LARGE")));
 	UE_LOG(LogTemp, Warning, TEXT("  -> BatchesPerEpoch: %d | TargetEpochs: %d (adaptive)"), BatchesPerEpoch, TargetEpochs);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Iterations: %d (clamped 3000-50000)"), AdaptiveIterations);
-	UE_LOG(LogTemp, Warning, TEXT("  -> BatchSize: %d"), TrainingSettings.BatchSize);
+	UE_LOG(LogTemp, Warning, TEXT("  -> Iterations: %d (clamped 1000-150000)"), AdaptiveIterations);
+	UE_LOG(LogTemp, Warning, TEXT("  -> BatchSize: %d | Window: %d (%s)"), TrainingSettings.BatchSize, TrainingSettings.Window,
+		TrainingSettings.Window > 1 ? TEXT("LSTM") : TEXT("no LSTM"));
+	UE_LOG(LogTemp, Warning, TEXT("  -> ExpectedFrames: %d (for progress tracking)"), TotalExpectedFrames);
 	UE_LOG(LogTemp, Warning, TEXT("  -> LearningRate: %.5f | LRDecay: %.5f"), TrainingSettings.LearningRate, TrainingSettings.LearningRateDecay);
 	UE_LOG(LogTemp, Warning, TEXT("  -> WeightDecay: %.5f | ActionReg: %.4f"), TrainingSettings.WeightDecay, TrainingSettings.ActionRegularizationWeight);
 
@@ -521,6 +524,12 @@ void ATankLearningAgentsManager::StartTraining()
 
 	// Store total iterations for progress tracking
 	TotalIterations = TrainingSettings.NumberOfIterations;
+	// v8.3 FIX: Calculate expected UE frames based on measured ratio from logs
+	// Measured: 100 Python iterations = ~216 UE frames = ~2.16 frames/iter
+	// With LSTM (Window>1): slower processing, ~4 frames/iter
+	// Without LSTM (Window=1): fast processing, ~2 frames/iter
+	const int32 FramesPerIteration = (TrainingSettings.Window > 1) ? 4 : 2;
+	TotalExpectedFrames = TotalIterations * FramesPerIteration;
 	CurrentIteration = 0;
 	CurrentLoss = 0.0f;
 
@@ -610,7 +619,17 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 		// 4. Increment recorded experiences counter
 		RecordedExperiencesCount++;
 
-		// 5. Log progress every 60 frames (1 second at 60 fps)
+		// 5. Track data diversity (v7.0) - get current input from trainer controller
+		if (TrainerTank)
+		{
+			ABaseTankAIController* TrainerController = Cast<ABaseTankAIController>(TrainerTank->GetController());
+			if (TrainerController)
+			{
+				UpdateDiversityTracking(TrainerController->GetCurrentThrottle(), TrainerController->GetCurrentSteering());
+			}
+		}
+
+		// 6. Log progress every 60 frames (1 second at 60 fps)
 		if (RecordedExperiencesCount % 60 == 0)
 		{
 			UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Recording in progress... %d frames recorded"), RecordedExperiencesCount);
@@ -1100,12 +1119,29 @@ void ATankLearningAgentsManager::EnableInferenceMode()
 
 float ATankLearningAgentsManager::GetTrainingProgress() const
 {
-	if (TotalIterations <= 0)
+	// v8.0 FIX: Use TotalExpectedFrames (UE frames) instead of TotalIterations (Python iterations)
+	// CurrentIteration counts UE frames, so we need to compare with expected UE frames
+	if (TotalExpectedFrames <= 0)
 	{
 		return 0.0f;
 	}
 
-	return FMath::Clamp(static_cast<float>(CurrentIteration) / static_cast<float>(TotalIterations), 0.0f, 1.0f);
+	if (ImitationTrainer && ImitationTrainer->IsTraining())
+	{
+		// Training still in progress
+		// CurrentIteration = UE frames processed, TotalExpectedFrames = estimated UE frames needed
+		float RawProgress = static_cast<float>(CurrentIteration) / static_cast<float>(TotalExpectedFrames);
+		// Cap at 99% until training actually completes (Python subprocess may finish faster/slower)
+		return FMath::Clamp(RawProgress, 0.0f, 0.99f);
+	}
+	else if (CurrentIteration > 0)
+	{
+		// Training completed - show 100%
+		return 1.0f;
+	}
+
+	// Not started yet
+	return 0.0f;
 }
 
 int32 ATankLearningAgentsManager::GetRecordedExperienceCount() const
@@ -1888,4 +1924,172 @@ FVector ATankLearningAgentsManager::GetCurrentWaypointLocation() const
 	}
 
 	return CurrentWaypoints[CurrentWaypointIndex];
+}
+
+// ========== DATA DIVERSITY TRACKING IMPLEMENTATION (v7.0) ==========
+
+void ATankLearningAgentsManager::ResetDiversityTracking()
+{
+	ForwardFrames = 0;
+	BackwardFrames = 0;
+	IdleFrames = 0;
+	LeftSteeringFrames = 0;
+	RightSteeringFrames = 0;
+	StraightFrames = 0;
+	ThrottleSum = 0.0f;
+	SteeringSum = 0.0f;
+}
+
+void ATankLearningAgentsManager::UpdateDiversityTracking(float Throttle, float Steering)
+{
+	// Track throttle distribution
+	if (Throttle > 0.1f)
+	{
+		ForwardFrames++;
+	}
+	else if (Throttle < -0.1f)
+	{
+		BackwardFrames++;
+	}
+	else
+	{
+		IdleFrames++;
+	}
+
+	// Track steering distribution
+	if (Steering < -0.1f)
+	{
+		LeftSteeringFrames++;
+	}
+	else if (Steering > 0.1f)
+	{
+		RightSteeringFrames++;
+	}
+	else
+	{
+		StraightFrames++;
+	}
+
+	// Accumulate for mean calculation
+	ThrottleSum += Throttle;
+	SteeringSum += Steering;
+}
+
+void ATankLearningAgentsManager::ValidateDataDiversity()
+{
+	if (RecordedExperiencesCount <= 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("DATA DIVERSITY: No data recorded!"));
+		return;
+	}
+
+	// Calculate percentages
+	const float TotalFrames = static_cast<float>(RecordedExperiencesCount);
+	const float ForwardPct = (ForwardFrames / TotalFrames) * 100.0f;
+	const float BackwardPct = (BackwardFrames / TotalFrames) * 100.0f;
+	const float IdlePct = (IdleFrames / TotalFrames) * 100.0f;
+	const float LeftPct = (LeftSteeringFrames / TotalFrames) * 100.0f;
+	const float RightPct = (RightSteeringFrames / TotalFrames) * 100.0f;
+	const float StraightPct = (StraightFrames / TotalFrames) * 100.0f;
+
+	// Calculate means
+	const float MeanThrottle = ThrottleSum / TotalFrames;
+	const float MeanSteering = SteeringSum / TotalFrames;
+
+	// Log distribution
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Warning, TEXT("DATA DIVERSITY ANALYSIS (v7.0)"));
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Warning, TEXT("Total Frames: %d"), RecordedExperiencesCount);
+	UE_LOG(LogTemp, Warning, TEXT(""));
+	UE_LOG(LogTemp, Warning, TEXT("THROTTLE DISTRIBUTION:"));
+	UE_LOG(LogTemp, Warning, TEXT("  Forward (>0.1):  %d frames (%.1f%%)"), ForwardFrames, ForwardPct);
+	UE_LOG(LogTemp, Warning, TEXT("  Backward (<-0.1): %d frames (%.1f%%)"), BackwardFrames, BackwardPct);
+	UE_LOG(LogTemp, Warning, TEXT("  Idle (-0.1~0.1): %d frames (%.1f%%)"), IdleFrames, IdlePct);
+	UE_LOG(LogTemp, Warning, TEXT("  Mean Throttle: %.3f"), MeanThrottle);
+	UE_LOG(LogTemp, Warning, TEXT(""));
+	UE_LOG(LogTemp, Warning, TEXT("STEERING DISTRIBUTION:"));
+	UE_LOG(LogTemp, Warning, TEXT("  Left (<-0.1):   %d frames (%.1f%%)"), LeftSteeringFrames, LeftPct);
+	UE_LOG(LogTemp, Warning, TEXT("  Right (>0.1):   %d frames (%.1f%%)"), RightSteeringFrames, RightPct);
+	UE_LOG(LogTemp, Warning, TEXT("  Straight (-0.1~0.1): %d frames (%.1f%%)"), StraightFrames, StraightPct);
+	UE_LOG(LogTemp, Warning, TEXT("  Mean Steering: %.3f"), MeanSteering);
+	UE_LOG(LogTemp, Warning, TEXT(""));
+
+	// Check for potential issues and provide warnings
+	bool bHasWarnings = false;
+
+	// Minimum data check
+	if (RecordedExperiencesCount < 3000)
+	{
+		UE_LOG(LogTemp, Error, TEXT("WARNING: Very small dataset (%d frames)!"), RecordedExperiencesCount);
+		UE_LOG(LogTemp, Error, TEXT("  -> Recommended minimum: 10,000+ frames for good generalization"));
+		UE_LOG(LogTemp, Error, TEXT("  -> Current: ~%.1f seconds of recording"), RecordedExperiencesCount / 60.0f);
+		bHasWarnings = true;
+	}
+	else if (RecordedExperiencesCount < 10000)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("NOTE: Small dataset (%d frames)"), RecordedExperiencesCount);
+		UE_LOG(LogTemp, Warning, TEXT("  -> May need more data for complex behaviors"));
+		bHasWarnings = true;
+	}
+
+	// Forward bias check
+	if (ForwardPct > 90.0f)
+	{
+		UE_LOG(LogTemp, Error, TEXT("WARNING: HEAVILY FORWARD-BIASED (%.1f%% forward)!"), ForwardPct);
+		UE_LOG(LogTemp, Error, TEXT("  -> AI may not learn to reverse when needed"));
+		UE_LOG(LogTemp, Error, TEXT("  -> Try recording some backward navigation segments"));
+		bHasWarnings = true;
+	}
+
+	// Steering balance check
+	const float SteeringImbalance = FMath::Abs(LeftPct - RightPct);
+	if (SteeringImbalance > 30.0f)
+	{
+		const TCHAR* BiasDirection = (LeftPct > RightPct) ? TEXT("LEFT") : TEXT("RIGHT");
+		UE_LOG(LogTemp, Error, TEXT("WARNING: STEERING IMBALANCE - %.1f%% bias toward %s!"), SteeringImbalance, BiasDirection);
+		UE_LOG(LogTemp, Error, TEXT("  -> Left: %.1f%% | Right: %.1f%%"), LeftPct, RightPct);
+		UE_LOG(LogTemp, Error, TEXT("  -> AI may turn %s more often than needed"), BiasDirection);
+		UE_LOG(LogTemp, Error, TEXT("  -> Try recording more turns in opposite direction"));
+		bHasWarnings = true;
+	}
+	else if (SteeringImbalance > 15.0f)
+	{
+		const TCHAR* BiasDirection = (LeftPct > RightPct) ? TEXT("LEFT") : TEXT("RIGHT");
+		UE_LOG(LogTemp, Warning, TEXT("NOTE: Mild steering bias (%.1f%% toward %s)"), SteeringImbalance, BiasDirection);
+		bHasWarnings = true;
+	}
+
+	// Idle throttle check (too much stopping)
+	if (IdlePct > 40.0f)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("NOTE: High idle time (%.1f%% not moving)"), IdlePct);
+		UE_LOG(LogTemp, Warning, TEXT("  -> Consider trimming pause segments from recording"));
+		bHasWarnings = true;
+	}
+
+	// Straight steering check (not enough turning)
+	if (StraightPct > 80.0f)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("NOTE: Very straight driving (%.1f%% no steering)"), StraightPct);
+		UE_LOG(LogTemp, Warning, TEXT("  -> AI may not learn to navigate tight corners well"));
+		UE_LOG(LogTemp, Warning, TEXT("  -> Consider recording more complex routes with turns"));
+		bHasWarnings = true;
+	}
+
+	// Final verdict
+	UE_LOG(LogTemp, Warning, TEXT(""));
+	if (!bHasWarnings)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("VERDICT: Data diversity looks GOOD!"));
+		UE_LOG(LogTemp, Warning, TEXT("  -> Balanced throttle and steering distribution"));
+		UE_LOG(LogTemp, Warning, TEXT("  -> Ready for training"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("VERDICT: Data has some issues (see warnings above)"));
+		UE_LOG(LogTemp, Warning, TEXT("  -> Training may still work, but AI behavior could be biased"));
+		UE_LOG(LogTemp, Warning, TEXT("  -> Consider recording additional diverse data"));
+	}
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
 }

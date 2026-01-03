@@ -123,9 +123,10 @@ void UTankTrainingHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 		else if (bCurrentTrainingStatus || LastTrainingProgress > 0.0f)
 		{
 			int32 CurrentIter = Manager->GetCurrentIteration();
-			int32 TotalIter = Manager->GetTotalIterations();
+			// v8.3 FIX: Use TotalExpectedFrames (UE frames) instead of TotalIterations (Python iterations)
+			int32 TotalFrames = Manager->GetTotalExpectedFrames();
 			float Progress = Manager->GetTrainingProgress() * 100.0f;
-			FString ProgressText = FString::Printf(TEXT("Progress: %d/%d (%.1f%%)"), CurrentIter, TotalIter, Progress);
+			FString ProgressText = FString::Printf(TEXT("Progress: %d/%d (%.1f%%)"), CurrentIter, TotalFrames, Progress);
 			GEngine->AddOnScreenDebugMessage(102, 0.0f, FColor::White, ProgressText, false, FVector2D(1.5f, 1.5f));
 		}
 
@@ -237,7 +238,8 @@ FText UTankTrainingHUD::GetTrainingProgressText() const
 	}
 
 	int32 Current = Manager->GetCurrentIteration();
-	int32 Total = GetTotalIterations();
+	// v8.3 FIX: Use TotalExpectedFrames for display consistency
+	int32 Total = Manager->GetTotalExpectedFrames();
 
 	return FText::FromString(FString::Printf(TEXT("%d/%d"), Current, Total));
 }

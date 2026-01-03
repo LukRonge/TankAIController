@@ -54,18 +54,9 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 	ObservationElements.Add(TEXT("DistanceToCurrentWaypoint"),
 		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 5000.0f));
 
-	// Relative position to final target (direction vector - normalized, LOCAL SPACE)
-	// MANUAL ENCODING: Using 3 separate floats
-	ObservationElements.Add(TEXT("TargetDirX"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
-	ObservationElements.Add(TEXT("TargetDirY"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
-	ObservationElements.Add(TEXT("TargetDirZ"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
-
-	// Distance to final target - scale 10000.0f (100m max reasonable distance)
-	ObservationElements.Add(TEXT("DistanceToTarget"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 10000.0f));
+	// v8.0: TargetDir and DistanceToTarget REMOVED - redundant with WaypointDir
+	// Waypoints already lead to target, so TargetDir duplicates information
+	// Keeping WaypointDirZ for future platform/elevation support
 
 	// ========== NARROW CORRIDOR OBSERVATIONS ==========
 
@@ -74,34 +65,24 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 	ObservationElements.Add(TEXT("AngularVelocityZ"),
 		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 180.0f));
 
-	// Left wall clearance - dedicated lateral distance for corridor centering
-	// Scale = 400.0f (max lateral trace distance in cm)
-	ObservationElements.Add(TEXT("LeftClearance"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 400.0f));
+	// v8.2: LeftClearance, RightClearance, MinObstacleDistance REMOVED
+	// These are redundant - information already available in LineTraces array
 
-	// Right wall clearance - dedicated lateral distance for corridor centering
-	// Scale = 400.0f (max lateral trace distance in cm)
-	ObservationElements.Add(TEXT("RightClearance"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 400.0f));
+	// v8.2: VelocityWaypointAlignment REMOVED
+	// This is a derived feature - network can learn this from ForwardSpeed + WaypointDir
 
-	// Minimum obstacle distance - closest danger from all traces
-	// Scale = 600.0f (same as line trace max)
-	ObservationElements.Add(TEXT("MinObstacleDistance"),
+	// ========== CORNER DISTANCES (v8.3 - Smooth corner navigation) ==========
+	// Extract diagonal traces as explicit features for corner awareness
+	// These help AI learn to avoid hitting physical corners of the tank
+	// Trace indices: 3=45°(FR), 9=135°(BR), 15=225°(BL), 21=315°(FL)
+	ObservationElements.Add(TEXT("CornerFrontRight"),
 		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 600.0f));
-
-	// ========== VELOCITY ALIGNMENT (v4.0 - CRITICAL for navigation quality) ==========
-	// Dot product of velocity direction with waypoint direction
-	// +1.0 = moving directly toward waypoint (perfect)
-	// 0.0 = moving perpendicular to waypoint
-	// -1.0 = moving away from waypoint (bad)
-	// This helps the AI understand if its current movement is productive
-	ObservationElements.Add(TEXT("VelocityWaypointAlignment"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
-
-	// Velocity magnitude relative to max speed (0-1 normalized)
-	// Helps AI correlate throttle input with actual movement
-	ObservationElements.Add(TEXT("NormalizedSpeed"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
+	ObservationElements.Add(TEXT("CornerFrontLeft"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 600.0f));
+	ObservationElements.Add(TEXT("CornerBackRight"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 600.0f));
+	ObservationElements.Add(TEXT("CornerBackLeft"),
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 600.0f));
 
 	// ========== HEADING ERROR (v5.0 - Research-based improvement) ==========
 	// Angle between tank's forward direction and direction to waypoint
@@ -113,22 +94,25 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 	ObservationElements.Add(TEXT("HeadingError"),
 		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
 
-	// ========== TRACK CENTERING (v5.0 - Research-based improvement) ==========
-	// Normalized difference between right and left clearance
-	// Range: -1 to +1
-	// 0 = perfectly centered in corridor
-	// +1 = too close to left wall (need to steer right)
-	// -1 = too close to right wall (need to steer left)
-	// Helps AI maintain center position in narrow corridors
-	ObservationElements.Add(TEXT("TrackCentering"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
+	// NOTE (v7.0): TrackCentering REMOVED - it conflicted with HeadingError
+	// AI has raw LeftClearance/RightClearance which is sufficient for obstacle avoidance
+	// TrackCentering said "steer away from wall" while HeadingError said "steer toward waypoint"
+	// causing the AI to oscillate and get confused
+
+	// ========== TURRET ORIENTATION (v6.0 - Combat targeting) ==========
+	// v8.0: DISABLED for navigation-only training - reduces complexity from 42 to 40 features
+	// Turret control will be re-enabled once movement learning is working correctly
+	// ObservationElements.Add(TEXT("TurretYawRelative"),
+	//     ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
+	// ObservationElements.Add(TEXT("TurretPitch"),
+	//     ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
 
 	// Combine all observations into a struct
 	OutObservationSchemaElement = ULearningAgentsObservations::SpecifyStructObservation(
 		InObservationSchema,
 		ObservationElements);
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Observation schema specified (41 features: 24 traces + 1 speed + 3 wp_dir + 1 wp_dist + 3 target_dir + 1 target_dist + 4 corridor + 2 velocity + 2 navigation)."));
+	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Observation schema specified (35 features: 24 traces + 4 corners + 1 speed + 3 wp_dir + 1 wp_dist + 1 angvel + 1 heading). v8.3: Added corner distances."));
 }
 
 void UTankLearningAgentsInteractor::SpecifyAgentAction_Implementation(
@@ -136,8 +120,7 @@ void UTankLearningAgentsInteractor::SpecifyAgentAction_Implementation(
 	ULearningAgentsActionSchema* InActionSchema)
 {
 	// Create a struct to hold all actions
-	// SIMPLIFIED: Only Throttle and Steering for UGV drone navigation
-	// Removed: Brake (not tracked), TurretYaw, TurretPitch (not training turret control)
+	// v8.0: Turret actions disabled for navigation-only training (was v6.0)
 	TMap<FName, FLearningAgentsActionSchemaElement> ActionElements;
 
 	// Throttle action (-1 to 1), scale = 1.0
@@ -148,12 +131,20 @@ void UTankLearningAgentsInteractor::SpecifyAgentAction_Implementation(
 	ActionElements.Add(TEXT("Steering"),
 		ULearningAgentsActions::SpecifyFloatAction(InActionSchema, 1.0f));
 
+	// ========== TURRET CONTROL (v6.0 - Combat targeting) ==========
+	// v8.0: DISABLED for navigation-only training - reduces action space from 4 to 2 outputs
+	// Turret control will be re-enabled once movement learning is working correctly
+	// ActionElements.Add(TEXT("TurretYaw"),
+	//     ULearningAgentsActions::SpecifyFloatAction(InActionSchema, 1.0f));
+	// ActionElements.Add(TEXT("TurretPitch"),
+	//     ULearningAgentsActions::SpecifyFloatAction(InActionSchema, 1.0f));
+
 	// Combine all actions into a struct
 	OutActionSchemaElement = ULearningAgentsActions::SpecifyStructAction(
 		InActionSchema,
 		ActionElements);
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Action schema specified (Throttle + Steering only)."));
+	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Action schema specified (Throttle + Steering). v8.0: Turret disabled for navigation."));
 }
 
 void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
@@ -236,9 +227,12 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, DistanceToWaypoint));
 
 	// ========== 4. TARGET NAVIGATION (SECONDARY) ==========
+	// v8.0: TargetDir and DistanceToTarget REMOVED - redundant with WaypointDir
+	// Waypoints already lead to target, so this duplicates information
+	// Code preserved for future use if needed:
+	/*
 	FVector DirectionToTarget = FVector::ZeroVector;
 	float DistanceToTarget = 0.0f;
-
 	if (AgentManager)
 	{
 		ATankLearningAgentsManager* TankManager = Cast<ATankLearningAgentsManager>(AgentManager->GetOwner());
@@ -246,93 +240,63 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 		{
 			if (ControlledTank)
 			{
-				// Get target location (world space)
 				FVector TargetLocation = TankManager->GetCurrentTargetLocation();
 				FVector AgentLocation = ControlledTank->GetActorLocation();
-
 				FVector DeltaToTarget = TargetLocation - AgentLocation;
 				DistanceToTarget = DeltaToTarget.Size();
 				DirectionToTarget = DeltaToTarget.GetSafeNormal();
 			}
 		}
 	}
-
-	// Direction to target - LOCAL SPACE
-	// MANUAL: Transform to local space ourselves using InverseTransformVector
 	FVector LocalTargetDir = TankTransform.InverseTransformVector(DirectionToTarget);
-	ObservationElements.Add(TEXT("TargetDirX"),
-		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LocalTargetDir.X));
-	ObservationElements.Add(TEXT("TargetDirY"),
-		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LocalTargetDir.Y));
-	ObservationElements.Add(TEXT("TargetDirZ"),
-		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LocalTargetDir.Z));
+	ObservationElements.Add(TEXT("TargetDirX"), ...);
+	ObservationElements.Add(TEXT("TargetDirY"), ...);
+	ObservationElements.Add(TEXT("TargetDirZ"), ...);
+	ObservationElements.Add(TEXT("DistanceToTarget"), ...);
+	*/
 
-	// Distance to target - normalized by schema scale 10000.0f
-	ObservationElements.Add(TEXT("DistanceToTarget"),
-		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, DistanceToTarget));
-
-	// ========== 5. NARROW CORRIDOR OBSERVATIONS ==========
+	// ========== 5. ANGULAR VELOCITY ==========
 
 	// Angular velocity Z (yaw rate in deg/sec)
 	const float AngularVelocityZ = TankController->GetAngularVelocityZ();
 	ObservationElements.Add(TEXT("AngularVelocityZ"),
 		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, AngularVelocityZ));
 
-	// Left and right wall clearance (cm)
-	const float LeftClearance = TankController->GetLeftClearance();
-	const float RightClearance = TankController->GetRightClearance();
-	ObservationElements.Add(TEXT("LeftClearance"),
-		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LeftClearance));
-	ObservationElements.Add(TEXT("RightClearance"),
-		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, RightClearance));
+	// v8.2: LeftClearance, RightClearance, MinObstacleDistance REMOVED
+	// Redundant with LineTraces - network can learn lateral awareness from trace array
 
-	// Minimum obstacle distance (closest danger from all line traces + lateral)
-	// Default to max ellipse distance (600cm) then find minimum from all traces
-	float MinObstacleDistance = 600.0f;  // EllipseMajorAxis max value
-	for (float TraceDist : LineTraces)
+	// v8.2: VelocityWaypointAlignment REMOVED
+	// Derived feature - network can learn this from ForwardSpeed + WaypointDir
+
+	// ========== 6. CORNER DISTANCES (v8.3 - Smooth corner navigation) ==========
+	// Extract diagonal traces for explicit corner awareness
+	// Helps AI avoid hitting physical corners when navigating tight spaces
+	if (LineTraces.Num() >= 24)
 	{
-		if (TraceDist < MinObstacleDistance)
-		{
-			MinObstacleDistance = TraceDist;
-		}
+		// Trace indices: 3=45°(FR), 21=315°(FL), 9=135°(BR), 15=225°(BL)
+		ObservationElements.Add(TEXT("CornerFrontRight"),
+			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LineTraces[3]));
+		ObservationElements.Add(TEXT("CornerFrontLeft"),
+			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LineTraces[21]));
+		ObservationElements.Add(TEXT("CornerBackRight"),
+			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LineTraces[9]));
+		ObservationElements.Add(TEXT("CornerBackLeft"),
+			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LineTraces[15]));
 	}
-	// Also include lateral clearances in minimum calculation
-	MinObstacleDistance = FMath::Min(MinObstacleDistance, LeftClearance);
-	MinObstacleDistance = FMath::Min(MinObstacleDistance, RightClearance);
-	ObservationElements.Add(TEXT("MinObstacleDistance"),
-		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, MinObstacleDistance));
-
-	// ========== 7. VELOCITY ALIGNMENT (v4.0 - CRITICAL) ==========
-	// Calculate how well the tank is moving toward the waypoint
-	float VelocityWaypointAlignment = 0.0f;
-	float NormalizedSpeed = 0.0f;
-
-	if (ControlledTank)
+	else
 	{
-		const FVector Velocity = ControlledTank->GetVelocity();
-		const float Speed = Velocity.Size();
-
-		// Normalized speed (0-1, where 1000 cm/s = 1.0)
-		const float MaxExpectedSpeed = 1000.0f;  // 10 m/s max expected
-		NormalizedSpeed = FMath::Clamp(Speed / MaxExpectedSpeed, 0.0f, 1.0f);
-
-		// Velocity alignment with waypoint direction
-		if (Speed > 10.0f && !DirectionToWaypoint.IsNearlyZero())  // Only if moving and has target
-		{
-			const FVector VelocityDir = Velocity.GetSafeNormal();
-			// Dot product: +1 = toward, 0 = perpendicular, -1 = away
-			VelocityWaypointAlignment = FVector::DotProduct(VelocityDir, DirectionToWaypoint);
-		}
-		// If not moving or no waypoint, alignment is 0 (neutral)
+		// Fallback if fewer traces - use max distance (no obstacle)
+		ObservationElements.Add(TEXT("CornerFrontRight"),
+			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, 600.0f));
+		ObservationElements.Add(TEXT("CornerFrontLeft"),
+			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, 600.0f));
+		ObservationElements.Add(TEXT("CornerBackRight"),
+			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, 600.0f));
+		ObservationElements.Add(TEXT("CornerBackLeft"),
+			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, 600.0f));
 	}
 
-	ObservationElements.Add(TEXT("VelocityWaypointAlignment"),
-		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, VelocityWaypointAlignment));
-
-	ObservationElements.Add(TEXT("NormalizedSpeed"),
-		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, NormalizedSpeed));
-
-	// ========== 8. HEADING ERROR (v5.0 - Research-based) ==========
+	// ========== 7. HEADING ERROR (v5.0 - Research-based) ==========
 	// Calculate angle between tank forward and waypoint direction
 	// Using atan2 on LocalWaypointDir gives us the angle directly
 	// LocalWaypointDir.Y = right component, LocalWaypointDir.X = forward component
@@ -347,22 +311,32 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 	ObservationElements.Add(TEXT("HeadingError"),
 		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, HeadingError));
 
-	// ========== 9. TRACK CENTERING (v5.0 - Research-based) ==========
-	// Calculate how off-center the tank is in the corridor
-	// (RightClearance - LeftClearance) / MaxClearance
-	// Positive = more space on right (too close to left wall) -> steer right
-	// Negative = more space on left (too close to right wall) -> steer left
-	// Zero = centered
-	const float MaxLateralClearance = TankController->GetLateralTraceDistance();
-	float TrackCentering = 0.0f;
-	if (MaxLateralClearance > 0.0f)
+	// NOTE (v7.0): TrackCentering REMOVED - conflicted with HeadingError
+	// v8.2: LeftClearance/RightClearance also removed - redundant with LineTraces
+
+	// ========== 9. TURRET ORIENTATION (v6.0 - Combat targeting) ==========
+	// v8.0: DISABLED for navigation-only training
+	// Turret observations will be re-enabled once movement learning is working correctly
+	/*
+	float TurretYawRelative = 0.0f;
+	float TurretPitchValue = 0.0f;
+
+	if (ControlledTank)
 	{
-		TrackCentering = (RightClearance - LeftClearance) / MaxLateralClearance;
-		// Clamp to -1 to +1 range
-		TrackCentering = FMath::Clamp(TrackCentering, -1.0f, 1.0f);
+		FRotator TurretWorldRot = TankController->GetTurretRotation();
+		FRotator TankBodyRot = ControlledTank->GetActorRotation();
+		float RelativeYaw = TurretWorldRot.Yaw - TankBodyRot.Yaw;
+		while (RelativeYaw > 180.0f) RelativeYaw -= 360.0f;
+		while (RelativeYaw < -180.0f) RelativeYaw += 360.0f;
+		TurretYawRelative = RelativeYaw / 180.0f;
+		TurretPitchValue = FMath::Clamp(TurretWorldRot.Pitch / 45.0f, -1.0f, 1.0f);
 	}
-	ObservationElements.Add(TEXT("TrackCentering"),
-		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, TrackCentering));
+
+	ObservationElements.Add(TEXT("TurretYawRelative"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, TurretYawRelative));
+	ObservationElements.Add(TEXT("TurretPitch"),
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, TurretPitchValue));
+	*/
 
 	// ========== DEBUG LOGGING ==========
 	// LocalWaypointDir and LocalTargetDir already computed above for observations
@@ -398,26 +372,17 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 			WpFrontBack, WpLeftRight, DistanceToWaypoint / 100.0f);
 
 		// Tank state
-		UE_LOG(LogTemp, Warning, TEXT("[TANK] Speed=%.0f cm/s"), ForwardSpeed);
+		UE_LOG(LogTemp, Warning, TEXT("[TANK] Speed=%.0f cm/s | AngVelZ=%.1f deg/s"), ForwardSpeed, AngularVelocityZ);
 
-		// Narrow corridor observations
-		UE_LOG(LogTemp, Warning, TEXT("[CORRIDOR] AngVelZ=%.1f deg/s | Left=%.0fcm | Right=%.0fcm | MinDist=%.0fcm"),
-			AngularVelocityZ, LeftClearance, RightClearance, MinObstacleDistance);
-
-		// Velocity alignment (v4.0)
-		const TCHAR* AlignmentQuality = (VelocityWaypointAlignment > 0.7f) ? TEXT("GOOD") :
-			((VelocityWaypointAlignment > 0.3f) ? TEXT("OK") :
-			((VelocityWaypointAlignment > -0.3f) ? TEXT("POOR") : TEXT("WRONG WAY")));
-		UE_LOG(LogTemp, Warning, TEXT("[VELOCITY] Alignment=%.2f (%s) | NormSpeed=%.2f"),
-			VelocityWaypointAlignment, AlignmentQuality, NormalizedSpeed);
-
-		// Navigation signals (v5.0)
+		// Navigation signals (v8.2: Simplified logging)
 		const TCHAR* HeadingStatus = (FMath::Abs(HeadingError) < 0.1f) ? TEXT("ON TARGET") :
 			((HeadingError > 0) ? TEXT("TURN RIGHT") : TEXT("TURN LEFT"));
-		const TCHAR* CenteringStatus = (FMath::Abs(TrackCentering) < 0.1f) ? TEXT("CENTERED") :
-			((TrackCentering > 0) ? TEXT("STEER RIGHT") : TEXT("STEER LEFT"));
-		UE_LOG(LogTemp, Warning, TEXT("[NAVIGATION] HeadingError=%.2f (%s) | TrackCentering=%.2f (%s)"),
-			HeadingError, HeadingStatus, TrackCentering, CenteringStatus);
+		UE_LOG(LogTemp, Warning, TEXT("[NAVIGATION] HeadingError=%.2f (%s)"),
+			HeadingError, HeadingStatus);
+
+		// Turret orientation (v6.0) - v8.0: DISABLED for navigation-only training
+		// const TCHAR* TurretYawDir = ...
+		// UE_LOG(LogTemp, Warning, TEXT("[TURRET] ...
 
 		// Tank orientation info
 		if (ControlledTank)
@@ -485,7 +450,7 @@ void UTankLearningAgentsInteractor::PerformAgentAction_Implementation(
 		return;
 	}
 
-	// Extract SIMPLIFIED actions (Throttle + Steering only for UGV navigation)
+	// Extract movement actions (Throttle + Steering)
 	float Throttle = 0.0f;
 	if (ULearningAgentsActions::GetFloatAction(Throttle, InActionObject, ActionElements[TEXT("Throttle")]))
 	{
@@ -498,6 +463,14 @@ void UTankLearningAgentsInteractor::PerformAgentAction_Implementation(
 		AIController->SetSteeringFromAI(Steering);
 	}
 
+	// Extract turret actions (v6.0 - Combat targeting)
+	// v8.0: DISABLED for navigation-only training - turret actions not in schema
+	// float TurretYaw = 0.0f;
+	// float TurretPitch = 0.0f;
+	// ULearningAgentsActions::GetFloatAction(TurretYaw, InActionObject, ActionElements[TEXT("TurretYaw")]);
+	// ULearningAgentsActions::GetFloatAction(TurretPitch, InActionObject, ActionElements[TEXT("TurretPitch")]);
+	// AIController->SetTurretRotationFromAI(TurretYaw, TurretPitch);
+
 	// DEBUG: Log AI actions every 30 frames (0.5 second) - synchronized with observation logging
 	static int32 ActionLogCounter = 0;
 	if (++ActionLogCounter % 30 == 0)
@@ -507,7 +480,7 @@ void UTankLearningAgentsInteractor::PerformAgentAction_Implementation(
 		const TCHAR* SteeringDir = (Steering > 0.1f) ? TEXT("RIGHT") : ((Steering < -0.1f) ? TEXT("LEFT") : TEXT("STRAIGHT"));
 
 		UE_LOG(LogTemp, Warning, TEXT(""));
-		UE_LOG(LogTemp, Warning, TEXT("====== AGENT %d AI ACTION OUTPUT ======"), AgentId);
+		UE_LOG(LogTemp, Warning, TEXT("====== AGENT %d AI ACTION OUTPUT (v8.0) ======"), AgentId);
 		UE_LOG(LogTemp, Warning, TEXT("[ACTION] Throttle=%.3f (%s) | Steering=%.3f (%s)"),
 			Throttle, ThrottleDir, Steering, SteeringDir);
 
@@ -596,11 +569,8 @@ void UTankLearningAgentsInteractor::EncodeHumanActionsForAgent(int32 AgentId)
 	// ========================================================================
 	// WARNING: This method uses INTERNAL UE::Learning:: API
 	// ========================================================================
-	// SIMPLIFIED for UGV drone navigation: Only Throttle + Steering
-	// USES RAW VALUES to ensure observation-action consistency:
-	// - Tank moves according to raw input from player
-	// - We record the same raw input as action
-	// - No mismatch between what tank does and what is recorded
+	// v8.0: Turret recording disabled for navigation-only training
+	// v6.0 had TurretYaw and TurretPitch - re-enable when movement works
 	// ========================================================================
 
 	// Get the controller for this agent
@@ -615,7 +585,13 @@ void UTankLearningAgentsInteractor::EncodeHumanActionsForAgent(int32 AgentId)
 	float Throttle = TankController->GetCurrentThrottle();
 	float Steering = TankController->GetCurrentSteering();
 
-	// Create action elements (Throttle + Steering only)
+	// v8.0: Turret recording disabled for navigation-only training
+	// AWR_Tank_Pawn* ControlledTank = TankController->GetControlledTank();
+	// float TurretYaw = 0.0f;
+	// float TurretPitch = 0.0f;
+	// ... turret calculation code ...
+
+	// Create action elements (Throttle + Steering only - v8.0)
 	TMap<FName, FLearningAgentsActionObjectElement> ActionElements;
 
 	ActionElements.Add(TEXT("Throttle"),
@@ -623,6 +599,12 @@ void UTankLearningAgentsInteractor::EncodeHumanActionsForAgent(int32 AgentId)
 
 	ActionElements.Add(TEXT("Steering"),
 		ULearningAgentsActions::MakeFloatAction(GetActionObject(), Steering));
+
+	// v8.0: Turret actions disabled for navigation-only training
+	// ActionElements.Add(TEXT("TurretYaw"),
+	//     ULearningAgentsActions::MakeFloatAction(GetActionObject(), TurretYaw));
+	// ActionElements.Add(TEXT("TurretPitch"),
+	//     ULearningAgentsActions::MakeFloatAction(GetActionObject(), TurretPitch));
 
 	// Combine actions into a struct
 	FLearningAgentsActionObjectElement ActionElement = ULearningAgentsActions::MakeStructAction(
@@ -644,7 +626,7 @@ void UTankLearningAgentsInteractor::EncodeHumanActionsForAgent(int32 AgentId)
 	static int32 EncodeLogCounter = 0;
 	if (++EncodeLogCounter % 60 == 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("RECORDING [Agent %d]: Throttle=%.3f | Steering=%.3f (raw)"),
+		UE_LOG(LogTemp, Log, TEXT("RECORDING (v8.0) [Agent %d]: Throttle=%.3f | Steering=%.3f"),
 			AgentId, Throttle, Steering);
 	}
 }

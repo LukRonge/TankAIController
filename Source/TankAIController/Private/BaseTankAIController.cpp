@@ -2,6 +2,7 @@
 
 #include "BaseTankAIController.h"
 #include "WR_Tank_Pawn.h"
+#include "WR_Turret.h"
 #include "WR_ControlsInterface.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
 #include "DrawDebugHelpers.h"
@@ -129,11 +130,48 @@ void ABaseTankAIController::PerformLineTraces()
 			LineTraceDistances[i] = EllipseMajorAxis;
 		}
 
-		// Debug visualization
+		// Debug visualization with color coding (v8.3)
 		if (bDrawDebugTraces)
 		{
-			FColor DebugColor = bHit ? FColor::Red : FColor::Green;
-			DrawDebugLine(GetWorld(), TraceStart, bHit ? HitResult.ImpactPoint : WorldPoint, DebugColor, false, -1.0f, 0, 2.0f);
+			FColor DebugColor;
+			float LineThickness = 2.0f;
+
+			// Color coding by trace direction:
+			// Forward (0) = Blue, Back (12) = Magenta
+			// Corners (3, 9, 15, 21) = Yellow/Orange
+			// Lateral (6, 18) = Cyan
+			// Others = Green/Red based on hit
+			if (i == 0)
+			{
+				// Forward - Blue
+				DebugColor = bHit ? FColor(100, 100, 255) : FColor::Blue;
+				LineThickness = 4.0f;
+			}
+			else if (i == 12)
+			{
+				// Back - Magenta
+				DebugColor = bHit ? FColor(200, 0, 200) : FColor::Magenta;
+				LineThickness = 3.0f;
+			}
+			else if (i == 3 || i == 9 || i == 15 || i == 21)
+			{
+				// Corners - Yellow/Orange
+				DebugColor = bHit ? FColor::Orange : FColor::Yellow;
+				LineThickness = 3.5f;
+			}
+			else if (i == 6 || i == 18)
+			{
+				// Lateral - Cyan
+				DebugColor = bHit ? FColor(0, 150, 150) : FColor::Cyan;
+				LineThickness = 3.0f;
+			}
+			else
+			{
+				// Other traces - Green/Red
+				DebugColor = bHit ? FColor::Red : FColor::Green;
+			}
+
+			DrawDebugLine(GetWorld(), TraceStart, bHit ? HitResult.ImpactPoint : WorldPoint, DebugColor, false, -1.0f, 0, LineThickness);
 		}
 	}
 }
@@ -250,11 +288,32 @@ FRotator ABaseTankAIController::GetTurretRotation() const
 		return FRotator::ZeroRotator;
 	}
 
-	// Get turret actor from tank
-	AActor* Turret = ControlledTank->GetTurret_Implementation();
+	// Get turret actor from tank and cast to AWR_Turret to access YawComponent/PitchComponent
+	AWR_Turret* Turret = Cast<AWR_Turret>(ControlledTank->GetTurret_Implementation());
 	if (Turret)
 	{
-		return Turret->GetActorRotation();
+		// The turret rotation is composed of:
+		// - YawComponent: relative yaw rotation (horizontal)
+		// - PitchComponent: relative pitch rotation (vertical)
+		// We need to combine them with the turret actor's base rotation
+
+		FRotator TurretBaseRot = Turret->GetActorRotation();
+
+		// Get YawComponent rotation (horizontal turret rotation)
+		if (Turret->YawComponent)
+		{
+			FRotator YawRot = Turret->YawComponent->GetRelativeRotation();
+			TurretBaseRot.Yaw += YawRot.Yaw;
+		}
+
+		// Get PitchComponent rotation (vertical turret rotation)
+		if (Turret->PitchComponent)
+		{
+			FRotator PitchRot = Turret->PitchComponent->GetRelativeRotation();
+			TurretBaseRot.Pitch = PitchRot.Pitch;
+		}
+
+		return TurretBaseRot;
 	}
 
 	return FRotator::ZeroRotator;
