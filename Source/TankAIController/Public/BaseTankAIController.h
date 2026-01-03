@@ -58,13 +58,29 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
 	int32 NumLineTraces = 24;
 
-	/** Major axis of ellipse (forward/backward) in cm - 6 meters for faster reaction */
+	/** Major axis of ellipse (forward/backward) in cm - 10 meters for better reaction time (v8.5) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
-	float EllipseMajorAxis = 600.0f;
+	float EllipseMajorAxis = 1000.0f;
 
-	/** Minor axis of ellipse (left/right) in cm - 3.5 meters for close wall detection */
+	/** Minor axis of ellipse (left/right) in cm - 6 meters, ratio ~1.7:1 with major axis (v8.5) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
-	float EllipseMinorAxis = 350.0f;
+	float EllipseMinorAxis = 600.0f;
+
+	// ========== TANK PHYSICAL DIMENSIONS (v8.5) ==========
+	// Used to offset trace origins from center to tank surface
+	// This ensures AI sees actual clearance, not distance from center
+
+	/** Half-length of tank body (forward/backward) in cm. Tank is 120cm long, so half = 60cm */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|Dimensions")
+	float TankHalfLength = 60.0f;
+
+	/** Half-width of tank body (left/right) in cm. Tank is 90cm wide, so half = 45cm */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|Dimensions")
+	float TankHalfWidth = 45.0f;
+
+	/** Whether to offset trace origins from tank surface (true) or center (false) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
+	bool bOffsetTracesFromSurface = true;
 
 	/** Line trace results - raw distance in cm to obstacle, or max distance if no obstacle */
 	UPROPERTY(BlueprintReadOnly, Category = "Tank|LineTraces")
@@ -110,6 +126,12 @@ protected:
 
 	/** Generate ellipse trace points in local space */
 	TArray<FVector> GenerateEllipseTracePoints() const;
+
+	/** Calculate offset from tank center to surface for a given angle (v8.5)
+	 *  Used to start line traces from tank surface instead of center
+	 *  @param AngleRad - Angle in radians (0 = forward, PI/2 = right)
+	 *  @return Offset distance from center to tank surface in that direction */
+	float CalculateTankSurfaceOffset(float AngleRad) const;
 
 	/** Apply movement commands to tank */
 	void ApplyMovementToTank(float Throttle, float Steering);

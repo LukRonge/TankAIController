@@ -11,6 +11,34 @@
 #include "LearningAgentsObservations.h"
 #include "LearningAgentsActions.h"
 
+// ============================================================================
+// OBSERVATION SCALING CONSTANTS (v8.5)
+// ============================================================================
+// These must match the actual trace distances in BaseTankAIController.h
+// Centralized here to avoid magic numbers throughout the code
+
+namespace TankAIConstants
+{
+	// Line trace distances (must match BaseTankAIController EllipseMajorAxis/MinorAxis)
+	constexpr float LineTraceMajorAxis = 1000.0f;  // Forward/backward trace distance (cm)
+	constexpr float LineTraceMinorAxis = 600.0f;   // Left/right trace distance (cm) - ratio ~1.7:1
+
+	// For normalization, we use the major axis as the scale
+	// This means side traces will normalize to < 1.0 which is fine
+	constexpr float LineTraceScale = LineTraceMajorAxis;
+
+	// Distance to waypoint - logarithmic scale
+	// log(5001) ≈ 8.517, used to normalize log(distance) to 0-1 range
+	constexpr float MaxWaypointDistance = 5000.0f;  // 50 meters max
+	constexpr float LogWaypointScale = 8.52f;       // log(MaxWaypointDistance + 1)
+
+	// Speed scale
+	constexpr float MaxSpeed = 1000.0f;  // ~10 m/s max tank speed
+
+	// Angular velocity scale
+	constexpr float MaxAngularVelocity = 180.0f;  // degrees per second
+}
+
 void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 	FLearningAgentsObservationSchemaElement& OutObservationSchemaElement,
 	ULearningAgentsObservationSchema* InObservationSchema)
@@ -28,16 +56,15 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 	// - MinObstacleDistance: closest obstacle awareness
 	TMap<FName, FLearningAgentsObservationSchemaElement> ObservationElements;
 
-	// Line traces observation - array of 24 raw distances in cm (0-600cm or max if no obstacle)
-	// Scale is set to 600.0f (max ellipse major axis - REDUCED for narrow corridors)
+	// Line traces observation - array of 24 raw distances in cm
+	// v8.5: Using constants for scale, increased from 600 for better reaction time
 	// Result: 0.0 = obstacle at tank, 1.0 = clear path
 	ObservationElements.Add(TEXT("LineTraces"),
-		ULearningAgentsObservations::SpecifyContinuousObservation(InObservationSchema, 24, 600.0f, TEXT("LineTraces")));
+		ULearningAgentsObservations::SpecifyContinuousObservation(InObservationSchema, 24, TankAIConstants::LineTraceScale, TEXT("LineTraces")));
 
-	// Forward speed observation - UGV drone max speed ~800-1000 cm/s (8-10 m/s)
-	// Scale = 1000.0f so normalized range is approximately -1 to 1
+	// Forward speed observation - max speed ~10 m/s
 	ObservationElements.Add(TEXT("ForwardSpeed"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1000.0f));
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, TankAIConstants::MaxSpeed));
 
 	// Relative position to current waypoint (direction vector - normalized, LOCAL SPACE)
 	// X > 0 = waypoint in front, Y > 0 = waypoint to the right
@@ -50,9 +77,11 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 	ObservationElements.Add(TEXT("WaypointDirZ"),
 		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 1.0f));
 
-	// Distance to current waypoint - scale 5000.0f (50m max reasonable distance)
+	// Distance to current waypoint - LOGARITHMIC SCALE (v8.5)
+	// log(distance + 1) gives better granularity for small distances
+	// Result: 50cm→0.46, 500cm→0.73, 5000cm→1.0 (much better discrimination)
 	ObservationElements.Add(TEXT("DistanceToCurrentWaypoint"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 5000.0f));
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, TankAIConstants::LogWaypointScale));
 
 	// v8.0: TargetDir and DistanceToTarget REMOVED - redundant with WaypointDir
 	// Waypoints already lead to target, so TargetDir duplicates information
@@ -61,9 +90,8 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 	// ========== NARROW CORRIDOR OBSERVATIONS ==========
 
 	// Angular velocity Z (yaw rate) - helps AI learn smooth steering without oscillation
-	// Scale = 180.0f (max reasonable rotation rate in deg/sec)
 	ObservationElements.Add(TEXT("AngularVelocityZ"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 180.0f));
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, TankAIConstants::MaxAngularVelocity));
 
 	// v8.2: LeftClearance, RightClearance, MinObstacleDistance REMOVED
 	// These are redundant - information already available in LineTraces array
@@ -76,13 +104,13 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 	// These help AI learn to avoid hitting physical corners of the tank
 	// Trace indices: 3=45°(FR), 9=135°(BR), 15=225°(BL), 21=315°(FL)
 	ObservationElements.Add(TEXT("CornerFrontRight"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 600.0f));
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, TankAIConstants::LineTraceScale));
 	ObservationElements.Add(TEXT("CornerFrontLeft"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 600.0f));
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, TankAIConstants::LineTraceScale));
 	ObservationElements.Add(TEXT("CornerBackRight"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 600.0f));
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, TankAIConstants::LineTraceScale));
 	ObservationElements.Add(TEXT("CornerBackLeft"),
-		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, 600.0f));
+		ULearningAgentsObservations::SpecifyFloatObservation(InObservationSchema, TankAIConstants::LineTraceScale));
 
 	// ========== HEADING ERROR (v5.0 - Research-based improvement) ==========
 	// Angle between tank's forward direction and direction to waypoint
@@ -112,7 +140,7 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 		InObservationSchema,
 		ObservationElements);
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Observation schema specified (35 features: 24 traces + 4 corners + 1 speed + 3 wp_dir + 1 wp_dist + 1 angvel + 1 heading). v8.3: Added corner distances."));
+	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Observation schema specified (35 features: 24 traces + 4 corners + 1 speed + 3 wp_dir + 1 wp_dist_log + 1 angvel + 1 heading). v8.5: Distance now uses logarithmic scale."));
 }
 
 void UTankLearningAgentsInteractor::SpecifyAgentAction_Implementation(
@@ -177,14 +205,14 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 	TMap<FName, FLearningAgentsObservationObjectElement> ObservationElements;
 
 	// ========== 1. LINE TRACES (CRITICAL for obstacle avoidance) ==========
-	// 24 distances in cm, normalized by schema scale 600.0f
+	// 24 distances in cm, normalized by TankAIConstants::LineTraceScale
 	// Result: 0.0 = obstacle at tank, 1.0 = clear path
 	const TArray<float>& LineTraces = TankController->GetLineTraceDistances();
 	ObservationElements.Add(TEXT("LineTraces"),
 		ULearningAgentsObservations::MakeContinuousObservationFromArrayView(InObservationObject, LineTraces, TEXT("LineTraces")));
 
 	// ========== 2. FORWARD SPEED ==========
-	// Scalar speed in cm/s, normalized by schema scale 1000.0f
+	// Scalar speed in cm/s, normalized by TankAIConstants::MaxSpeed
 	const float ForwardSpeed = TankController->GetForwardSpeed();
 	ObservationElements.Add(TEXT("ForwardSpeed"),
 		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, ForwardSpeed));
@@ -222,9 +250,12 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 	ObservationElements.Add(TEXT("WaypointDirZ"),
 		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LocalWaypointDir.Z));
 
-	// Distance to waypoint - normalized by schema scale 5000.0f
+	// Distance to waypoint - LOGARITHMIC SCALE (v8.5)
+	// log(distance + 1) for better granularity at small distances
+	// +1.0f prevents log(0) = -inf when exactly at waypoint
+	float LogDistanceToWaypoint = FMath::Loge(DistanceToWaypoint + 1.0f);
 	ObservationElements.Add(TEXT("DistanceToCurrentWaypoint"),
-		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, DistanceToWaypoint));
+		ULearningAgentsObservations::MakeFloatObservation(InObservationObject, LogDistanceToWaypoint));
 
 	// ========== 4. TARGET NAVIGATION (SECONDARY) ==========
 	// v8.0: TargetDir and DistanceToTarget REMOVED - redundant with WaypointDir
@@ -287,13 +318,13 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 	{
 		// Fallback if fewer traces - use max distance (no obstacle)
 		ObservationElements.Add(TEXT("CornerFrontRight"),
-			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, 600.0f));
+			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, TankAIConstants::LineTraceScale));
 		ObservationElements.Add(TEXT("CornerFrontLeft"),
-			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, 600.0f));
+			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, TankAIConstants::LineTraceScale));
 		ObservationElements.Add(TEXT("CornerBackRight"),
-			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, 600.0f));
+			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, TankAIConstants::LineTraceScale));
 		ObservationElements.Add(TEXT("CornerBackLeft"),
-			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, 600.0f));
+			ULearningAgentsObservations::MakeFloatObservation(InObservationObject, TankAIConstants::LineTraceScale));
 	}
 
 	// ========== 7. HEADING ERROR (v5.0 - Research-based) ==========

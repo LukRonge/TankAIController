@@ -86,8 +86,8 @@ void ABaseTankAIController::PerformLineTraces()
 		return;
 	}
 
-	// Get trace start location (tank center)
-	const FVector TraceStart = ControlledTank->GetActorLocation();
+	// Get tank center location and rotation
+	const FVector TankCenter = ControlledTank->GetActorLocation();
 	const FRotator TankRotation = ControlledTank->GetActorRotation();
 
 	// Generate ellipse trace points
@@ -101,33 +101,51 @@ void ABaseTankAIController::PerformLineTraces()
 	// Perform traces
 	for (int32 i = 0; i < TracePoints.Num(); i++)
 	{
-		// Transform local point to world space
-		const FVector LocalPoint = TracePoints[i];
-		const FVector WorldPoint = TraceStart + TankRotation.RotateVector(LocalPoint);
+		// Calculate angle for this trace
+		const float Angle = (2.0f * PI * i) / NumLineTraces;
+
+		// Calculate offset from center to tank surface (v8.5)
+		float SurfaceOffset = 0.0f;
+		if (bOffsetTracesFromSurface)
+		{
+			SurfaceOffset = CalculateTankSurfaceOffset(Angle);
+		}
+
+		// Calculate trace start point (either center or surface)
+		const FVector LocalOffset = FVector(
+			SurfaceOffset * FMath::Cos(Angle),
+			SurfaceOffset * FMath::Sin(Angle),
+			0.0f
+		);
+		const FVector TraceStart = TankCenter + TankRotation.RotateVector(LocalOffset);
+
+		// Transform ellipse end point to world space
+		const FVector LocalEndPoint = TracePoints[i];
+		const FVector TraceEnd = TankCenter + TankRotation.RotateVector(LocalEndPoint);
 
 		// Perform line trace
 		FHitResult HitResult;
 		bool bHit = GetWorld()->LineTraceSingleByChannel(
 			HitResult,
 			TraceStart,
-			WorldPoint,
+			TraceEnd,
 			ECC_Visibility,
 			QueryParams
 		);
 
-		// Store raw distance to obstacle (in cm), or max distance if no obstacle
+		// Store distance - now represents actual clearance from tank surface!
 		if (bHit)
 		{
-			// Calculate real distance to obstacle in cm
+			// Distance from trace start (surface) to obstacle
 			float Distance = FVector::Dist(TraceStart, HitResult.ImpactPoint);
 			LineTraceDistances[i] = Distance;
 		}
 		else
 		{
-			// FIXED: No obstacle detected - set to max ellipse distance (clear space)
-			// UE Learning Agents will normalize this by EllipseMajorAxis to get 1.0
-			// Previous: -1.0f caused incorrect normalization (-1.0 / 350.0 = -0.003)
-			LineTraceDistances[i] = EllipseMajorAxis;
+			// No obstacle - max distance minus the offset (actual clearance)
+			// For ellipse: the max distance in this direction minus surface offset
+			float MaxDistanceInDirection = FVector::Dist(TankCenter, TraceEnd);
+			LineTraceDistances[i] = MaxDistanceInDirection - SurfaceOffset;
 		}
 
 		// Debug visualization with color coding (v8.3)
@@ -171,7 +189,7 @@ void ABaseTankAIController::PerformLineTraces()
 				DebugColor = bHit ? FColor::Red : FColor::Green;
 			}
 
-			DrawDebugLine(GetWorld(), TraceStart, bHit ? HitResult.ImpactPoint : WorldPoint, DebugColor, false, -1.0f, 0, LineThickness);
+			DrawDebugLine(GetWorld(), TraceStart, bHit ? HitResult.ImpactPoint : TraceEnd, DebugColor, false, -1.0f, 0, LineThickness);
 		}
 	}
 }
@@ -194,6 +212,49 @@ TArray<FVector> ABaseTankAIController::GenerateEllipseTracePoints() const
 	}
 
 	return Points;
+}
+
+float ABaseTankAIController::CalculateTankSurfaceOffset(float AngleRad) const
+{
+	// Calculate distance from tank center to surface for rectangular tank
+	// Tank is approximated as a rectangle with dimensions TankHalfLength x TankHalfWidth
+	//
+	// For a ray from center at angle AngleRad:
+	// - If ray hits front/back face: offset = HalfLength / |cos(angle)|
+	// - If ray hits left/right face: offset = HalfWidth / |sin(angle)|
+	// The actual offset is the minimum of these two (first intersection)
+
+	const float CosA = FMath::Cos(AngleRad);
+	const float SinA = FMath::Sin(AngleRad);
+	const float AbsCosA = FMath::Abs(CosA);
+	const float AbsSinA = FMath::Abs(SinA);
+
+	// Avoid division by zero for exact cardinal directions
+	constexpr float Epsilon = 0.0001f;
+
+	float OffsetLength = TankHalfLength;  // Default for pure forward/backward
+	float OffsetWidth = TankHalfWidth;    // Default for pure left/right
+
+	if (AbsCosA > Epsilon)
+	{
+		OffsetLength = TankHalfLength / AbsCosA;
+	}
+	else
+	{
+		OffsetLength = TankHalfWidth;  // Pure sideways, use width
+	}
+
+	if (AbsSinA > Epsilon)
+	{
+		OffsetWidth = TankHalfWidth / AbsSinA;
+	}
+	else
+	{
+		OffsetWidth = TankHalfLength;  // Pure forward/back, use length
+	}
+
+	// Return minimum (first intersection with rectangle boundary)
+	return FMath::Min(OffsetLength, OffsetWidth);
 }
 
 void ABaseTankAIController::ApplyMovementToTank(float Throttle, float Steering)
