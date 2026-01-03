@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "AILearningAgentsController.h"
+#include "TankWaypointComponent.h"
 #include "WR_Tank_Pawn.h"
 
 AAILearningAgentsController::AAILearningAgentsController()
@@ -11,108 +12,188 @@ AAILearningAgentsController::AAILearningAgentsController()
 void AAILearningAgentsController::BeginPlay()
 {
 	Super::BeginPlay();
-	// Base class handles tank possession
 
+	// Log configuration
 	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("AAILearningAgentsController: Safety Configuration"));
+	UE_LOG(LogTemp, Warning, TEXT("AAILearningAgentsController: Configuration"));
 	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> ObstacleProximityThrottle: %s"), bEnableObstacleProximityThrottle ? TEXT("ENABLED") : TEXT("DISABLED"));
-	if (bEnableObstacleProximityThrottle)
+	UE_LOG(LogTemp, Warning, TEXT("  -> MaxThrottleLimit: %.2f"), MaxThrottleLimit);
+	UE_LOG(LogTemp, Warning, TEXT("  -> StuckDetection: %s"), bEnableStuckDetection ? TEXT("ENABLED") : TEXT("DISABLED"));
+	if (bEnableStuckDetection)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("  -> SlowdownStart: %.0f cm | SlowdownEnd: %.0f cm"), ObstacleSlowdownStartDistance, ObstacleSlowdownEndDistance);
-		UE_LOG(LogTemp, Warning, TEXT("  -> MinThrottleMult: %.2f | MaxThrottle: %.2f"), MinThrottleMultiplier, MaxThrottleLimit);
-		UE_LOG(LogTemp, Warning, TEXT("  -> WARNING: Safety limiting may cause training/inference mismatch!"));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("  -> MaxThrottleLimit: %.2f (no proximity reduction)"), MaxThrottleLimit);
+		UE_LOG(LogTemp, Warning, TEXT("  -> StuckTimeThreshold: %.1fs"), StuckTimeThreshold);
+		UE_LOG(LogTemp, Warning, TEXT("  -> StuckVelocityThreshold: %.1f cm/s"), StuckVelocityThreshold);
+		UE_LOG(LogTemp, Warning, TEXT("  -> RecoveryReverseDistance: %.1f cm"), RecoveryReverseDistance);
+		UE_LOG(LogTemp, Warning, TEXT("  -> RecoveryThrottle: %.2f"), RecoveryThrottle);
+		UE_LOG(LogTemp, Warning, TEXT("  -> MaxRecoveryAttempts: %d"), MaxRecoveryAttempts);
 	}
 	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+
+	// Create waypoint component
+	WaypointComponent = NewObject<UTankWaypointComponent>(this, UTankWaypointComponent::StaticClass(), TEXT("WaypointComponent"));
+	if (WaypointComponent)
+	{
+		WaypointComponent->RegisterComponent();
+		UE_LOG(LogTemp, Log, TEXT("AAILearningAgentsController: WaypointComponent created"));
+	}
 }
 
 void AAILearningAgentsController::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// ========================================================================
-	// SAFETY: Apply obstacle proximity throttle reduction
-	// ========================================================================
-	float SafeThrottle = CurrentThrottle;
-	if (bEnableObstacleProximityThrottle && FMath::Abs(CurrentThrottle) > 0.01f)
+	if (!ControlledTank)
 	{
-		const float ProximityMultiplier = CalculateObstacleProximityMultiplier();
-		SafeThrottle = CurrentThrottle * ProximityMultiplier;
+		return;
 	}
 
-	// Apply max throttle limit
-	SafeThrottle = FMath::Clamp(SafeThrottle, -MaxThrottleLimit, MaxThrottleLimit);
+	// 1. Update stuck detection
+	if (bEnableStuckDetection)
+	{
+		UpdateStuckDetection(DeltaTime);
+	}
 
-	// Apply AI inputs to tank using base class method
-	ApplyMovementToTank(SafeThrottle, CurrentSteering);
+	// 2. If recovering, handle recovery movement and skip normal AI control
+	if (bIsRecovering)
+	{
+		UpdateRecovery();
+		return;
+	}
+
+	// 3. Normal operation - apply AI inputs with throttle limit
+	const float FinalThrottle = FMath::Clamp(CurrentThrottle, -MaxThrottleLimit, MaxThrottleLimit);
+	ApplyMovementToTank(FinalThrottle, CurrentSteering);
 }
 
-float AAILearningAgentsController::CalculateObstacleProximityMultiplier() const
+// ========== STUCK DETECTION ==========
+
+void AAILearningAgentsController::UpdateStuckDetection(float DeltaTime)
 {
-	// Find minimum obstacle distance from front traces only (direction AI is moving)
-	const TArray<float>& LineTraces = LineTraceDistances;
-
-	if (LineTraces.Num() == 0)
+	if (bIsRecovering)
 	{
-		return 1.0f;  // No traces, no reduction
+		return;
 	}
 
-	// For 24 traces: indices 0-3 and 21-23 are front-facing (±30° from forward)
-	// For 16 traces: indices 0-2 and 14-15 are front-facing
-	float MinFrontDistance = ObstacleSlowdownStartDistance * 2.0f;  // Start with large value
+	const float CurrentSpeed = FMath::Abs(GetForwardSpeed());
+	const float AbsThrottle = FMath::Abs(CurrentThrottle);
 
-	const int32 NumTraces = LineTraces.Num();
-	const int32 FrontTraceCount = FMath::Max(3, NumTraces / 8);  // ~12.5% of traces are front
+	// Check stuck condition: throttle applied but not moving
+	if (AbsThrottle > StuckThrottleThreshold && CurrentSpeed < StuckVelocityThreshold)
+	{
+		StuckTimer += DeltaTime;
 
-	// Check front traces (around index 0)
-	for (int32 i = 0; i < FrontTraceCount; ++i)
-	{
-		MinFrontDistance = FMath::Min(MinFrontDistance, LineTraces[i]);
-	}
-	// Check rear-front wrap-around traces
-	for (int32 i = NumTraces - FrontTraceCount; i < NumTraces; ++i)
-	{
-		MinFrontDistance = FMath::Min(MinFrontDistance, LineTraces[i]);
-	}
-
-	// Also check lateral clearance for tight corridors
-	MinFrontDistance = FMath::Min(MinFrontDistance, LeftClearance);
-	MinFrontDistance = FMath::Min(MinFrontDistance, RightClearance);
-
-	// Calculate multiplier based on distance
-	if (MinFrontDistance >= ObstacleSlowdownStartDistance)
-	{
-		return 1.0f;  // Far from obstacles, no reduction
-	}
-	else if (MinFrontDistance <= ObstacleSlowdownEndDistance)
-	{
-		return MinThrottleMultiplier;  // Very close, maximum reduction
+		if (StuckTimer >= StuckTimeThreshold && !bIsStuck)
+		{
+			bIsStuck = true;
+			StartRecovery();
+		}
 	}
 	else
 	{
-		// Linear interpolation between start and end distances
-		const float Range = ObstacleSlowdownStartDistance - ObstacleSlowdownEndDistance;
-		const float DistanceFromEnd = MinFrontDistance - ObstacleSlowdownEndDistance;
-		const float Alpha = DistanceFromEnd / Range;
-		return FMath::Lerp(MinThrottleMultiplier, 1.0f, Alpha);
+		// Moving normally - reset timer
+		StuckTimer = 0.0f;
+		bIsStuck = false;
 	}
 }
 
-// ========== AI ACTION API IMPLEMENTATION ==========
+void AAILearningAgentsController::StartRecovery()
+{
+	bIsRecovering = true;
+	RecoveryStartPosition = ControlledTank->GetActorLocation();
+	RecoveryAttemptCount++;
+
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Warning, TEXT("STUCK DETECTED! Starting recovery attempt %d/%d"),
+		RecoveryAttemptCount, MaxRecoveryAttempts);
+	UE_LOG(LogTemp, Warning, TEXT("  -> Position: %s"), *RecoveryStartPosition.ToString());
+	UE_LOG(LogTemp, Warning, TEXT("  -> Reversing %.1f cm with throttle %.2f"),
+		RecoveryReverseDistance, RecoveryThrottle);
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+}
+
+void AAILearningAgentsController::UpdateRecovery()
+{
+	if (!bIsRecovering || !ControlledTank)
+	{
+		return;
+	}
+
+	// Calculate distance moved from recovery start
+	const FVector CurrentPos = ControlledTank->GetActorLocation();
+	const float DistanceMoved = FVector::Dist2D(RecoveryStartPosition, CurrentPos);
+
+	// Check if moved enough
+	if (DistanceMoved >= RecoveryReverseDistance)
+	{
+		EndRecovery(true);
+		return;
+	}
+
+	// Apply recovery inputs (reverse + slight steering)
+	// Alternate steering direction based on attempt count
+	const float SteerDir = (RecoveryAttemptCount % 2 == 0) ? 1.0f : -1.0f;
+	const float RecoverySteer = RecoverySteering * SteerDir;
+
+	ApplyMovementToTank(RecoveryThrottle, RecoverySteer);
+}
+
+void AAILearningAgentsController::EndRecovery(bool bSuccess)
+{
+	bIsRecovering = false;
+	StuckTimer = 0.0f;
+	bIsStuck = false;
+
+	if (bSuccess)
+	{
+		const FVector CurrentPos = ControlledTank->GetActorLocation();
+		const float ActualDistance = FVector::Dist2D(RecoveryStartPosition, CurrentPos);
+
+		UE_LOG(LogTemp, Warning, TEXT("Recovery SUCCESS! Moved %.1f cm"), ActualDistance);
+		RecoveryAttemptCount = 0;  // Reset on success
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Recovery INCOMPLETE - attempt %d/%d"),
+			RecoveryAttemptCount, MaxRecoveryAttempts);
+
+		if (RecoveryAttemptCount >= MaxRecoveryAttempts)
+		{
+			OnRecoveryFailed();
+		}
+		else
+		{
+			// Try again
+			bIsStuck = true;
+			StartRecovery();
+		}
+	}
+}
+
+void AAILearningAgentsController::OnRecoveryFailed()
+{
+	UE_LOG(LogTemp, Error, TEXT("========================================"));
+	UE_LOG(LogTemp, Error, TEXT("RECOVERY FAILED after %d attempts!"), MaxRecoveryAttempts);
+	UE_LOG(LogTemp, Error, TEXT("Regenerating waypoints from current position..."));
+	UE_LOG(LogTemp, Error, TEXT("========================================"));
+
+	RecoveryAttemptCount = 0;
+
+	// Regenerate waypoints from current position
+	if (WaypointComponent)
+	{
+		WaypointComponent->RegenerateWaypointsFromCurrentPosition();
+	}
+}
+
+// ========== AI ACTION API ==========
 
 void AAILearningAgentsController::SetThrottleFromAI(float Value)
 {
-	// Just set current value - Previous is updated in Tick() at start of NEXT frame
 	CurrentThrottle = FMath::Clamp(Value, -1.0f, 1.0f);
 }
 
 void AAILearningAgentsController::SetSteeringFromAI(float Value)
 {
-	// Just set current value - Previous is updated in Tick() at start of NEXT frame
 	CurrentSteering = FMath::Clamp(Value, -1.0f, 1.0f);
 }
 
@@ -123,11 +204,10 @@ void AAILearningAgentsController::SetBrakeFromAI(float Value)
 
 void AAILearningAgentsController::SetTurretRotationFromAI(float Yaw, float Pitch)
 {
-	// Store current turret rotation for observation (converted from normalized to degrees)
+	// Store current turret rotation for observation
 	CurrentTurretRotation = FRotator(Pitch * 45.0f, Yaw * 180.0f, 0.0f);
 
-	// Apply turret rotation via the new AI-specific method
-	// Yaw and Pitch are normalized values (-1 to 1) representing relative orientation
+	// Apply turret rotation via tank
 	if (ControlledTank)
 	{
 		ControlledTank->SetAITurretInput(Yaw, Pitch);
