@@ -35,6 +35,15 @@ void UTankWaypointComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	// Auto-advance waypoints when reached
+	if (bHasActiveTarget && Waypoints.Num() > 0 && CurrentWaypointIndex < Waypoints.Num())
+	{
+		if (IsCurrentWaypointReached())
+		{
+			AdvanceToNextWaypoint();
+		}
+	}
+
 	if (bShowDebugVisualization)
 	{
 		DrawDebugVisualization();
@@ -99,12 +108,11 @@ bool UTankWaypointComponent::GenerateRandomTarget()
 			CurrentTargetLocation = ProjectedLocation.Location;
 			bHasActiveTarget = true;
 
-			UE_LOG(LogTemp, Warning, TEXT("TankWaypointComponent: Generated target at %s (%.1fm away)"),
-				*CurrentTargetLocation.ToString(),
-				FVector::Dist(Origin, CurrentTargetLocation) / 100.0f);
-
 			// Generate waypoints to the new target
 			GenerateWaypointsToTarget();
+
+			UE_LOG(LogTemp, Log, TEXT("WaypointComponent: Target at %.1fm, %d waypoints"),
+				FVector::Dist(Origin, CurrentTargetLocation) / 100.0f, Waypoints.Num());
 
 			return true;
 		}
@@ -118,9 +126,6 @@ void UTankWaypointComponent::SetTarget(FVector Location)
 {
 	CurrentTargetLocation = Location;
 	bHasActiveTarget = true;
-
-	UE_LOG(LogTemp, Log, TEXT("TankWaypointComponent: Target set to %s"), *Location.ToString());
-
 	GenerateWaypointsToTarget();
 }
 
@@ -221,7 +226,6 @@ bool UTankWaypointComponent::GenerateWaypointsToTarget()
 			}
 		}
 
-		UE_LOG(LogTemp, Warning, TEXT("TankWaypointComponent: Generated %d waypoints to target"), Waypoints.Num());
 		return true;
 	}
 	else
@@ -229,8 +233,6 @@ bool UTankWaypointComponent::GenerateWaypointsToTarget()
 		// Fallback: direct path
 		Waypoints.Add(StartLocation);
 		Waypoints.Add(EndLocation);
-
-		UE_LOG(LogTemp, Warning, TEXT("TankWaypointComponent: Using direct path (2 waypoints)"));
 		return true;
 	}
 }
@@ -239,11 +241,10 @@ bool UTankWaypointComponent::RegenerateWaypointsFromCurrentPosition()
 {
 	if (!bHasActiveTarget)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankWaypointComponent: Cannot regenerate - no active target"));
 		return false;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("TankWaypointComponent: Regenerating waypoints from current position..."));
+	UE_LOG(LogTemp, Log, TEXT("WaypointComponent: Regenerating waypoints"));
 
 	const bool bSuccess = GenerateWaypointsToTarget();
 
@@ -298,14 +299,12 @@ void UTankWaypointComponent::AdvanceToNextWaypoint()
 		const int32 ReachedIndex = CurrentWaypointIndex;
 		CurrentWaypointIndex++;
 
-		UE_LOG(LogTemp, Warning, TEXT("TankWaypointComponent: Waypoint #%d reached! (%d/%d)"),
-			ReachedIndex, CurrentWaypointIndex, Waypoints.Num());
-
 		OnWaypointReached.Broadcast(ReachedIndex);
 
+		// Log only at key milestones
 		if (AreAllWaypointsCompleted())
 		{
-			UE_LOG(LogTemp, Warning, TEXT("TankWaypointComponent: All waypoints completed!"));
+			UE_LOG(LogTemp, Log, TEXT("WaypointComponent: All %d waypoints completed"), Waypoints.Num());
 		}
 	}
 }

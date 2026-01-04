@@ -8,11 +8,17 @@
 
 class AWR_Tank_Pawn;
 class UChaosWheeledVehicleMovementComponent;
+class UTankWaypointComponent;
 
 /**
  * Base Tank AI Controller
  * Parent class for both HumanPlayerController (trainer) and AILearningAgentsController
  * Contains common functionality for controlling tanks and gathering observation data for AI training
+ *
+ * WAYPOINT SYSTEM:
+ * Each controller owns its own WaypointComponent for navigation.
+ * - Training: Manager sets target on trainer's WaypointComponent
+ * - Gameplay: AI controller generates targets independently
  */
 UCLASS(Abstract)
 class TANKAICONTROLLER_API ABaseTankAIController : public APlayerController
@@ -32,6 +38,12 @@ protected:
 	/** Cached reference to controlled tank pawn */
 	UPROPERTY()
 	TObjectPtr<AWR_Tank_Pawn> ControlledTank;
+
+	// ========== WAYPOINT NAVIGATION ==========
+
+	/** Waypoint component for path following - each controller owns its own */
+	UPROPERTY()
+	TObjectPtr<UTankWaypointComponent> WaypointComponent;
 
 	// ========== CURRENT INPUT STATE ==========
 
@@ -199,4 +211,10 @@ public:
 	/** Get lateral trace distance setting in cm */
 	UFUNCTION(BlueprintPure, Category = "Tank|Observations")
 	float GetLateralTraceDistance() const { return LateralTraceDistance; }
+
+	// ========== WAYPOINT NAVIGATION ==========
+
+	/** Get waypoint component for navigation */
+	UFUNCTION(BlueprintPure, Category = "Tank|Waypoints")
+	UTankWaypointComponent* GetWaypointComponent() const { return WaypointComponent; }
 };

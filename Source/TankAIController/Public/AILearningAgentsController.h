@@ -6,16 +6,17 @@
 #include "BaseTankAIController.h"
 #include "AILearningAgentsController.generated.h"
 
-class UTankWaypointComponent;
-
 /**
  * AI Learning Agents Controller - Controls agent tank via Learning Agents Interactor
  * Receives actions from AI and applies them to the tank
  * Inherits from BaseTankAIController to share common tank control functionality
  *
+ * STANDALONE: Works independently without TankLearningAgentsManager
+ * Inherits WaypointComponent from BaseTankAIController for navigation
+ *
  * FEATURES:
  * - Stuck detection with velocity-based monitoring
- * - Distance-based recovery (reverse until moved)
+ * - Distance-based recovery (reverse ~100cm when stuck)
  * - Waypoint regeneration on recovery failure
  */
 UCLASS()
@@ -52,21 +53,17 @@ public:
 
 	// ========== RECOVERY SETTINGS ==========
 
-	/** Distance to reverse during recovery (cm) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Recovery", meta = (ClampMin = "30.0", ClampMax = "200.0"))
-	float RecoveryReverseDistance = 80.0f;
+	/** Distance to reverse during recovery (cm) - max 100cm */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Recovery", meta = (ClampMin = "50.0", ClampMax = "150.0"))
+	float RecoveryReverseDistance = 100.0f;
 
 	/** Throttle during recovery (negative = reverse) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Recovery", meta = (ClampMin = "-1.0", ClampMax = "-0.1"))
-	float RecoveryThrottle = -0.4f;
-
-	/** Steering magnitude during recovery (alternates direction) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Recovery", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float RecoverySteering = 0.25f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Recovery", meta = (ClampMin = "-1.0", ClampMax = "-0.2"))
+	float RecoveryThrottle = -0.5f;
 
 	/** Maximum recovery attempts before regenerating waypoints */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Recovery", meta = (ClampMin = "1", ClampMax = "5"))
-	int32 MaxRecoveryAttempts = 2;
+	int32 MaxRecoveryAttempts = 3;
 
 	// ========== STATE GETTERS ==========
 
@@ -85,6 +82,14 @@ public:
 	/** Get current recovery attempt count */
 	UFUNCTION(BlueprintPure, Category = "AI|StuckDetection")
 	int32 GetRecoveryAttemptCount() const { return RecoveryAttemptCount; }
+
+	/** Get recovery progress (0.0 to 1.0) */
+	UFUNCTION(BlueprintPure, Category = "AI|StuckDetection")
+	float GetRecoveryProgress() const;
+
+	/** Get current heading error to waypoint (-1 to +1, 0 = facing waypoint) */
+	UFUNCTION(BlueprintPure, Category = "AI|Navigation")
+	float GetHeadingErrorToWaypoint() const;
 
 protected:
 	virtual void BeginPlay() override;
@@ -124,10 +129,6 @@ protected:
 	/** Number of recovery attempts for current stuck situation */
 	int32 RecoveryAttemptCount = 0;
 
-	/** Cached waypoint component reference */
-	UPROPERTY()
-	TObjectPtr<UTankWaypointComponent> WaypointComponent;
-
 public:
 	// ========== AI ACTION API ==========
 
@@ -146,8 +147,4 @@ public:
 	/** Set turret rotation from AI (Yaw and Pitch in degrees) */
 	UFUNCTION(BlueprintCallable, Category = "AI|Actions")
 	void SetTurretRotationFromAI(float Yaw, float Pitch);
-
-	/** Get waypoint component */
-	UFUNCTION(BlueprintPure, Category = "AI|Waypoints")
-	UTankWaypointComponent* GetWaypointComponent() const { return WaypointComponent; }
 };

@@ -55,27 +55,15 @@ protected:
 	float SmoothedThrottle = 0.0f;
 	float SmoothedSteering = 0.0f;
 
-	// ========== INPUT HANDLERS ==========
+	// ========== TRAINING CONTROLS ==========
 
-	/** Handle MoveForward input (W/S keys) */
-	void MoveForward(float AxisValue);
-
-	/** Handle MoveRight input (A/D keys) */
-	void MoveRight(float AxisValue);
-
-	/** Handle LookUp input (Mouse Y) */
-	void LookUp(float AxisValue);
-
-	/** Handle LookRight input (Mouse X) */
-	void LookRight(float AxisValue);
-
-	/** Toggle recording on/off (Action input) */
+	/** Toggle recording on/off */
 	void StartStopRecording();
 
-	/** Toggle training on/off (Action input) */
+	/** Toggle training on/off */
 	void StartStopTraining();
 
-	/** Enable inference mode (Action input) */
+	/** Enable inference mode */
 	void EnableInference();
 
 private:

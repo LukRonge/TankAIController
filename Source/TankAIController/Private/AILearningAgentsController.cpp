@@ -3,6 +3,7 @@
 #include "AILearningAgentsController.h"
 #include "TankWaypointComponent.h"
 #include "WR_Tank_Pawn.h"
+#include "Math/UnrealMathUtility.h"
 
 AAILearningAgentsController::AAILearningAgentsController()
 {
@@ -13,29 +14,11 @@ void AAILearningAgentsController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Log configuration
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("AAILearningAgentsController: Configuration"));
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> MaxThrottleLimit: %.2f"), MaxThrottleLimit);
-	UE_LOG(LogTemp, Warning, TEXT("  -> StuckDetection: %s"), bEnableStuckDetection ? TEXT("ENABLED") : TEXT("DISABLED"));
-	if (bEnableStuckDetection)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("  -> StuckTimeThreshold: %.1fs"), StuckTimeThreshold);
-		UE_LOG(LogTemp, Warning, TEXT("  -> StuckVelocityThreshold: %.1f cm/s"), StuckVelocityThreshold);
-		UE_LOG(LogTemp, Warning, TEXT("  -> RecoveryReverseDistance: %.1f cm"), RecoveryReverseDistance);
-		UE_LOG(LogTemp, Warning, TEXT("  -> RecoveryThrottle: %.2f"), RecoveryThrottle);
-		UE_LOG(LogTemp, Warning, TEXT("  -> MaxRecoveryAttempts: %d"), MaxRecoveryAttempts);
-	}
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	// WaypointComponent is created in BaseTankAIController::BeginPlay()
 
-	// Create waypoint component
-	WaypointComponent = NewObject<UTankWaypointComponent>(this, UTankWaypointComponent::StaticClass(), TEXT("WaypointComponent"));
-	if (WaypointComponent)
-	{
-		WaypointComponent->RegisterComponent();
-		UE_LOG(LogTemp, Log, TEXT("AAILearningAgentsController: WaypointComponent created"));
-	}
+	// Log configuration
+	UE_LOG(LogTemp, Log, TEXT("AAILearningAgentsController: StuckDetection=%s, ReverseDistance=%.0fcm, MaxAttempts=%d"),
+		bEnableStuckDetection ? TEXT("ON") : TEXT("OFF"), RecoveryReverseDistance, MaxRecoveryAttempts);
 }
 
 void AAILearningAgentsController::Tick(float DeltaTime)
@@ -122,19 +105,16 @@ void AAILearningAgentsController::UpdateRecovery()
 	const FVector CurrentPos = ControlledTank->GetActorLocation();
 	const float DistanceMoved = FVector::Dist2D(RecoveryStartPosition, CurrentPos);
 
-	// Check if moved enough
+	// Check if moved enough (100cm)
 	if (DistanceMoved >= RecoveryReverseDistance)
 	{
 		EndRecovery(true);
 		return;
 	}
 
-	// Apply recovery inputs (reverse + slight steering)
-	// Alternate steering direction based on attempt count
-	const float SteerDir = (RecoveryAttemptCount % 2 == 0) ? 1.0f : -1.0f;
-	const float RecoverySteer = RecoverySteering * SteerDir;
-
-	ApplyMovementToTank(RecoveryThrottle, RecoverySteer);
+	// Apply recovery inputs - just reverse, no steering
+	// This gives AI clean reverse without turning
+	ApplyMovementToTank(RecoveryThrottle, 0.0f);
 }
 
 void AAILearningAgentsController::EndRecovery(bool bSuccess)
@@ -212,4 +192,38 @@ void AAILearningAgentsController::SetTurretRotationFromAI(float Yaw, float Pitch
 	{
 		ControlledTank->SetAITurretInput(Yaw, Pitch);
 	}
+}
+
+// ========== NAVIGATION HELPERS ==========
+
+float AAILearningAgentsController::GetRecoveryProgress() const
+{
+	if (!bIsRecovering || !ControlledTank || RecoveryReverseDistance <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	const FVector CurrentPos = ControlledTank->GetActorLocation();
+	const float DistanceMoved = FVector::Dist2D(RecoveryStartPosition, CurrentPos);
+	return FMath::Clamp(DistanceMoved / RecoveryReverseDistance, 0.0f, 1.0f);
+}
+
+float AAILearningAgentsController::GetHeadingErrorToWaypoint() const
+{
+	if (!WaypointComponent || !ControlledTank || !WaypointComponent->HasActiveTarget())
+	{
+		return 0.0f;
+	}
+
+	// Get direction to waypoint in local space
+	const FVector LocalDir = WaypointComponent->GetLocalDirectionToCurrentWaypoint();
+
+	if (LocalDir.IsNearlyZero())
+	{
+		return 0.0f;
+	}
+
+	// atan2(Y, X) gives angle from forward axis: positive = right, negative = left
+	// Normalize by PI to get -1 to +1 range
+	return FMath::Atan2(LocalDir.Y, LocalDir.X) / PI;
 }

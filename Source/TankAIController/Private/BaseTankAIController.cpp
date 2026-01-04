@@ -4,6 +4,7 @@
 #include "WR_Tank_Pawn.h"
 #include "WR_Turret.h"
 #include "WR_ControlsInterface.h"
+#include "TankWaypointComponent.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Kismet/KismetMathLibrary.h"
@@ -27,9 +28,15 @@ void ABaseTankAIController::BeginPlay()
 	LineTraceDistances.SetNum(NumLineTraces);
 	for (int32 i = 0; i < NumLineTraces; i++)
 	{
-		// FIXED: Initialize to max distance (clear space) instead of -1.0f
-		// UE Learning Agents will normalize this by EllipseMajorAxis (350.0f) to get 1.0
 		LineTraceDistances[i] = EllipseMajorAxis;
+	}
+
+	// Create waypoint component - each controller owns its own
+	WaypointComponent = NewObject<UTankWaypointComponent>(this, UTankWaypointComponent::StaticClass(), TEXT("WaypointComponent"));
+	if (WaypointComponent)
+	{
+		WaypointComponent->RegisterComponent();
+		UE_LOG(LogTemp, Log, TEXT("%s: WaypointComponent created"), *GetName());
 	}
 }
 

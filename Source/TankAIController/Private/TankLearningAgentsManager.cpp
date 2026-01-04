@@ -4,6 +4,7 @@
 #include "TankLearningAgentsInteractor.h"
 #include "TankLearningAgentsTrainer.h"
 #include "BaseTankAIController.h"
+#include "TankWaypointComponent.h"
 #include "LearningAgentsManager.h"
 #include "LearningAgentsPolicy.h"
 #include "LearningAgentsImitationTrainer.h"
@@ -735,36 +736,18 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 		Policy->RunInference(0.0f);  // 0.0f = no noise, deterministic actions
 
 		// CRITICAL: Track AI tank's waypoint/target progress during inference
-		// Without this, AI has no new targets to navigate to after reaching current one
+		// Use AI controller's WaypointComponent for navigation
 		if (bUseTargetBasedRecording && bHasActiveTarget && AgentTank)
 		{
-			// Check waypoint progress (using AgentTank instead of TrainerTank)
-			if (bUseWaypointPathFollowing && CurrentWaypoints.Num() > 0 && CurrentWaypointIndex < CurrentWaypoints.Num())
+			ABaseTankAIController* AIController = Cast<ABaseTankAIController>(AgentTank->GetController());
+			UTankWaypointComponent* WaypointComp = AIController ? AIController->GetWaypointComponent() : nullptr;
+
+			// Check waypoint progress using AI's WaypointComponent
+			if (bUseWaypointPathFollowing && WaypointComp && WaypointComp->HasActiveTarget())
 			{
-				const FVector AILocation = AgentTank->GetActorLocation();
-				const FVector WaypointLocation = CurrentWaypoints[CurrentWaypointIndex];
-				const float DistanceToWaypoint = FVector::Dist2D(AILocation, WaypointLocation);
-
-				if (DistanceToWaypoint <= WaypointReachRadius)
-				{
-					UE_LOG(LogTemp, Warning, TEXT("AI INFERENCE: Waypoint #%d reached!"), CurrentWaypointIndex);
-					CurrentWaypointIndex++;
-
-					if (CurrentWaypointIndex >= CurrentWaypoints.Num())
-					{
-						UE_LOG(LogTemp, Warning, TEXT("AI INFERENCE: All waypoints completed, heading to target"));
-					}
-				}
-			}
-
-			// Check if AI reached target (after all waypoints completed)
-			const bool bWaypointsCompleted = !bUseWaypointPathFollowing || CurrentWaypointIndex >= CurrentWaypoints.Num();
-			if (bWaypointsCompleted)
-			{
-				const FVector AILocation = AgentTank->GetActorLocation();
-				const float DistanceToTarget = FVector::Dist2D(AILocation, CurrentTargetLocation);
-
-				if (DistanceToTarget <= TargetReachRadius)
+				// WaypointComponent handles waypoint advancement internally via TickComponent
+				// Just check if target reached
+				if (WaypointComp->IsTargetReached())
 				{
 					UE_LOG(LogTemp, Warning, TEXT("AI INFERENCE: Target reached! Generating new target..."));
 
@@ -778,8 +761,24 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 
 					if (bHasActiveTarget)
 					{
-						UE_LOG(LogTemp, Warning, TEXT("AI INFERENCE: New target generated at %s"), *CurrentTargetLocation.ToString());
+						UE_LOG(LogTemp, Warning, TEXT("AI INFERENCE: New target at %s"), *CurrentTargetLocation.ToString());
 					}
+				}
+			}
+			else if (!bUseWaypointPathFollowing)
+			{
+				// Direct target tracking (no waypoints)
+				const FVector AILocation = AgentTank->GetActorLocation();
+				const float DistanceToTarget = FVector::Dist2D(AILocation, CurrentTargetLocation);
+
+				if (DistanceToTarget <= TargetReachRadius)
+				{
+					UE_LOG(LogTemp, Warning, TEXT("AI INFERENCE: Target reached! Generating new target..."));
+
+					AWR_Tank_Pawn* OriginalTrainer = TrainerTank;
+					TrainerTank = AgentTank;
+					GenerateNewTarget();
+					TrainerTank = OriginalTrainer;
 				}
 			}
 		}
@@ -1464,10 +1463,14 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 		UE_LOG(LogTemp, Warning, TEXT("  Experience Index: %d"), RecordedExperiencesCount);
 		UE_LOG(LogTemp, Warning, TEXT("========================================"));
 
-		// Generate waypoints to target (if waypoint system enabled)
-		if (bUseWaypointPathFollowing)
+		// Set target on trainer's WaypointComponent (it handles pathfinding internally)
+		if (bUseWaypointPathFollowing && TrainerTank)
 		{
-			GenerateWaypointsToTarget();
+			ABaseTankAIController* TrainerController = Cast<ABaseTankAIController>(TrainerTank->GetController());
+			if (TrainerController && TrainerController->GetWaypointComponent())
+			{
+				TrainerController->GetWaypointComponent()->SetTarget(CurrentTargetLocation);
+			}
 		}
 
 		// Create or update visualization
@@ -1550,10 +1553,14 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 		UE_LOG(LogTemp, Warning, TEXT("  Experience Index: %d"), RecordedExperiencesCount);
 		UE_LOG(LogTemp, Warning, TEXT("========================================"));
 
-		// Generate waypoints to target (if waypoint system enabled)
-		if (bUseWaypointPathFollowing)
+		// Set target on trainer's WaypointComponent (it handles pathfinding internally)
+		if (bUseWaypointPathFollowing && TrainerTank)
 		{
-			GenerateWaypointsToTarget();
+			ABaseTankAIController* TrainerController = Cast<ABaseTankAIController>(TrainerTank->GetController());
+			if (TrainerController && TrainerController->GetWaypointComponent())
+			{
+				TrainerController->GetWaypointComponent()->SetTarget(CurrentTargetLocation);
+			}
 		}
 
 		// Create or update visualization

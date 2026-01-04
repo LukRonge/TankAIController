@@ -29,47 +29,25 @@ void AHumanPlayerController::BeginPlay()
 	SetInputMode(InputMode);
 
 	// Capture mouse cursor
-	SetMouseLocation(GEngine->GameViewport->Viewport->GetSizeXY().X / 2,
-	                 GEngine->GameViewport->Viewport->GetSizeXY().Y / 2);
+	if (GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport)
+	{
+		SetMouseLocation(GEngine->GameViewport->Viewport->GetSizeXY().X / 2,
+		                 GEngine->GameViewport->Viewport->GetSizeXY().Y / 2);
+	}
 
-	UE_LOG(LogTemp, Log, TEXT("HumanPlayerController: BeginPlay - Ready for training data collection"));
-	UE_LOG(LogTemp, Log, TEXT("HumanPlayerController: Mouse input enabled and cursor captured"));
+	UE_LOG(LogTemp, Log, TEXT("HumanPlayerController: Ready for training"));
 }
 
 void AHumanPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 
-	UE_LOG(LogTemp, Warning, TEXT("HumanPlayerController::SetupInputComponent - START"));
-
 	if (InputComponent)
 	{
-		// ========================================================================
-		// NOTE: Axis bindings (MoveForward, MoveRight, etc.) are NOT bound here
-		// ========================================================================
-		// The tank pawn (AWR_Tank_Pawn) has its own SetupPlayerInputComponent that
-		// binds the same axes. Input goes to the pawn first, so these controller
-		// bindings would never fire. Instead, we READ input from the pawn in Tick().
-		//
-		// Only action bindings work here because they're not bound on the pawn.
-		UE_LOG(LogTemp, Warning, TEXT("HumanPlayerController: NOTE - Axis inputs handled by tank pawn, reading in Tick()"));
-
 		// Bind action inputs for recording and training control
-		// These actions are NOT bound on the tank pawn, so they work here
 		InputComponent->BindAction("StartStopRecording", IE_Pressed, this, &AHumanPlayerController::StartStopRecording);
-		UE_LOG(LogTemp, Warning, TEXT("  - Bound StartStopRecording (NumPad8)"));
-
 		InputComponent->BindAction("StartStopTraining", IE_Pressed, this, &AHumanPlayerController::StartStopTraining);
-		UE_LOG(LogTemp, Warning, TEXT("  - Bound StartStopTraining (NumPad9)"));
-
 		InputComponent->BindAction("EnableInference", IE_Pressed, this, &AHumanPlayerController::EnableInference);
-		UE_LOG(LogTemp, Warning, TEXT("  - Bound EnableInference (NumPad7)"));
-
-		UE_LOG(LogTemp, Warning, TEXT("HumanPlayerController: Input bindings setup complete - 3 action bindings"));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("HumanPlayerController: InputComponent is NULL!"));
 	}
 }
 
@@ -162,35 +140,6 @@ void AHumanPlayerController::Tick(float DeltaTime)
 		// Note: Tank pawn handles its own movement in its Tick()
 		// We do NOT call ApplyMovementToTank here - that would override pawn's input
 	}
-}
-
-// ========== INPUT HANDLERS (DEPRECATED) ==========
-// These methods are NO LONGER CALLED because input goes directly to tank pawn.
-// Input values are now READ from the tank pawn in Tick() instead.
-// Keeping these for reference but they can be removed in future cleanup.
-
-void AHumanPlayerController::MoveForward(float AxisValue)
-{
-	// DEPRECATED: This method is never called - input goes to tank pawn
-	// CurrentThrottle is now read from tank pawn in Tick()
-}
-
-void AHumanPlayerController::MoveRight(float AxisValue)
-{
-	// DEPRECATED: This method is never called - input goes to tank pawn
-	// CurrentSteering is now read from tank pawn in Tick()
-}
-
-void AHumanPlayerController::LookUp(float AxisValue)
-{
-	// DEPRECATED: This method is never called - input goes to tank pawn
-	// Turret rotation is handled by tank pawn, we read it in Tick()
-}
-
-void AHumanPlayerController::LookRight(float AxisValue)
-{
-	// DEPRECATED: This method is never called - input goes to tank pawn
-	// Turret rotation is handled by tank pawn, we read it in Tick()
 }
 
 // ========== RECORDING & TRAINING CONTROLS ==========
