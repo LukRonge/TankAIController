@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "BaseTankAIController.h"
+#include "EnemyDetectionComponent.h"
 #include "AILearningAgentsController.generated.h"
 
 /**
@@ -48,9 +49,82 @@ public:
 	float StuckVelocityThreshold = 15.0f;
 
 	/** Minimum throttle to trigger stuck detection (0-1) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|StuckDetection", meta = (ClampMin = "0.05", ClampMax = "0.5"))
-	float StuckThrottleThreshold = 0.15f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|StuckDetection", meta = (ClampMin = "0.01", ClampMax = "0.5"))
+	float StuckThrottleThreshold = 0.02f;
 
+	// ========== TURRET CONTROL SETTINGS ==========
+
+	/** Enable automatic turret aiming at waypoint/target */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Turret")
+	bool bEnableTurretAiming = true;
+
+	/** Enable turret targeting of detected enemies (prioritizes enemies over waypoints) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Turret")
+	bool bEnableEnemyTargeting = true;
+
+	/** Minimum awareness state required to target enemy (Combat = only fully visible, Suspicious = any detection) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Turret")
+	EAwarenessState MinAwarenessForTargeting = EAwarenessState::Alerted;
+
+	/** Maximum angle from forward to engage enemy (degrees). 90 = front hemisphere only */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Turret", meta = (ClampMin = "30.0", ClampMax = "180.0"))
+	float EnemyEngageAngleLimit = 90.0f;
+
+	/** Time to wait after losing target before returning to waypoint (seconds) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Turret", meta = (ClampMin = "0.0", ClampMax = "5.0"))
+	float ReturnToWaypointDelay = 0.5f;
+
+	/** Turret rotation interpolation speed (higher = faster rotation).
+	 *  Uses RInterpTo with quaternion interpolation for smooth wraparound handling. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Turret", meta = (ClampMin = "1.0", ClampMax = "20.0"))
+	float TurretRotationInterpSpeed = 8.0f;
+
+	/** Height above ground to aim at when tracking waypoints (cm). 50 = aim at 50cm above ground */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Turret", meta = (ClampMin = "0.0", ClampMax = "200.0"))
+	float WaypointAimHeight = 50.0f;
+
+	/** Check if turret is currently targeting an enemy */
+	UFUNCTION(BlueprintPure, Category = "AI|Turret")
+	bool IsTargetingEnemy() const { return bIsTargetingEnemy; }
+
+	/** Get current turret target actor (enemy or nullptr if targeting waypoint) */
+	UFUNCTION(BlueprintPure, Category = "AI|Turret")
+	AActor* GetCurrentTurretTarget() const { return CurrentTurretTarget.Get(); }
+
+	// ========== ENEMY DETECTION ==========
+
+	/** Enemy detection component - handles visibility checks and awareness tracking */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Detection")
+	TObjectPtr<UEnemyDetectionComponent> EnemyDetectionComponent;
+
+	/** Get enemy detection component */
+	UFUNCTION(BlueprintPure, Category = "AI|Detection")
+	UEnemyDetectionComponent* GetEnemyDetectionComponent() const { return EnemyDetectionComponent; }
+
+	/** Enable HUD notifications when enemies are detected (for debugging/spectating) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Detection")
+	bool bNotifyDetectedEnemyHUD = true;
+
+	/** Enable debug visualization for enemy detection (draws FOV cone, detection rays, etc.) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Detection")
+	bool bEnableDetectionDebug = true;
+
+protected:
+	// ========== DETECTION EVENT HANDLERS ==========
+
+	/** Called when enemy is first detected */
+	UFUNCTION()
+	void OnEnemyDetectedHandler(AActor* Enemy, const FDetectedEnemyInfo& Info);
+
+	/** Called when enemy awareness state changes */
+	UFUNCTION()
+	void OnAwarenessStateChangedHandler(AActor* Enemy, EAwarenessState OldState, EAwarenessState NewState);
+
+	/** Called when enemy is lost */
+	UFUNCTION()
+	void OnEnemyLostHandler(AActor* Enemy);
+
+public:
 	// ========== RECOVERY SETTINGS ==========
 
 	/** Distance to reverse during recovery (cm) - max 100cm */
@@ -91,9 +165,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AI|Navigation")
 	float GetHeadingErrorToWaypoint() const;
 
+	/** Get current turret yaw relative to tank (degrees) */
+	UFUNCTION(BlueprintPure, Category = "AI|Turret")
+	float GetCurrentTurretYaw() const { return CurrentTurretYaw; }
+
+	/** Get current turret pitch (degrees) */
+	UFUNCTION(BlueprintPure, Category = "AI|Turret")
+	float GetCurrentTurretPitch() const { return CurrentTurretPitch; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
+	virtual void OnPossess(APawn* InPawn) override;
 
 	// ========== STUCK DETECTION METHODS ==========
 
@@ -111,6 +194,40 @@ protected:
 
 	/** Called when all recovery attempts fail */
 	void OnRecoveryFailed();
+
+	// ========== TURRET CONTROL METHODS ==========
+
+	/** Update turret aim toward waypoint/target with smooth rotation */
+	void UpdateTurretAimToWaypoint(float DeltaTime);
+
+	/** Get target location for turret aiming (waypoint or final target) */
+	FVector GetTurretAimTargetLocation() const;
+
+	// ========== TURRET STATE ==========
+
+	/** Current turret yaw in degrees (relative to tank) */
+	float CurrentTurretYaw = 0.0f;
+
+	/** Current turret pitch in degrees */
+	float CurrentTurretPitch = 0.0f;
+
+	/** Target turret yaw in degrees (relative to tank) */
+	float TargetTurretYaw = 0.0f;
+
+	/** Is turret currently tracking an enemy? */
+	bool bIsTargetingEnemy = false;
+
+	/** Current enemy target (if any) */
+	TWeakObjectPtr<AActor> CurrentTurretTarget;
+
+	/** Timer for return-to-waypoint delay after losing enemy target */
+	float ReturnToWaypointTimer = 0.0f;
+
+	/** Last known enemy target location (for smooth transition) */
+	FVector LastEnemyTargetLocation = FVector::ZeroVector;
+
+	/** Target turret pitch in degrees */
+	float TargetTurretPitch = 0.0f;
 
 	// ========== STUCK STATE ==========
 

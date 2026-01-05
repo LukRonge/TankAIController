@@ -5,6 +5,7 @@
 #include "WR_Turret.h"
 #include "WR_ControlsInterface.h"
 #include "TankWaypointComponent.h"
+#include "TurretMathHelper.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Kismet/KismetMathLibrary.h"
@@ -68,6 +69,10 @@ void ABaseTankAIController::OnPossess(APawn* InPawn)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("%s::OnPossess - Successfully possessed tank: %s (Class: %s)"),
 			*GetName(), *ControlledTank->GetName(), *ControlledTank->GetClass()->GetName());
+
+		// NOTE: bUseAITurretControl is set by AI-specific controllers (e.g., AILearningAgentsController)
+		// NOT here in the base class, because HumanPlayerController also inherits from this class
+		// and human players need camera-based turret targeting.
 
 		// Check if tank implements WR_ControlsInterface
 		if (ControlledTank->GetClass()->ImplementsInterface(UWR_ControlsInterface::StaticClass()))
@@ -351,40 +356,7 @@ float ABaseTankAIController::GetForwardSpeed() const
 
 FRotator ABaseTankAIController::GetTurretRotation() const
 {
-	if (!ControlledTank)
-	{
-		return FRotator::ZeroRotator;
-	}
-
-	// Get turret actor from tank and cast to AWR_Turret to access YawComponent/PitchComponent
-	AWR_Turret* Turret = Cast<AWR_Turret>(ControlledTank->GetTurret_Implementation());
-	if (Turret)
-	{
-		// The turret rotation is composed of:
-		// - YawComponent: relative yaw rotation (horizontal)
-		// - PitchComponent: relative pitch rotation (vertical)
-		// We need to combine them with the turret actor's base rotation
-
-		FRotator TurretBaseRot = Turret->GetActorRotation();
-
-		// Get YawComponent rotation (horizontal turret rotation)
-		if (Turret->YawComponent)
-		{
-			FRotator YawRot = Turret->YawComponent->GetRelativeRotation();
-			TurretBaseRot.Yaw += YawRot.Yaw;
-		}
-
-		// Get PitchComponent rotation (vertical turret rotation)
-		if (Turret->PitchComponent)
-		{
-			FRotator PitchRot = Turret->PitchComponent->GetRelativeRotation();
-			TurretBaseRot.Pitch = PitchRot.Pitch;
-		}
-
-		return TurretBaseRot;
-	}
-
-	return FRotator::ZeroRotator;
+	return FTurretMathHelper::GetTurretRotationFromTank(ControlledTank);
 }
 
 // ========== NARROW CORRIDOR METHODS ==========
