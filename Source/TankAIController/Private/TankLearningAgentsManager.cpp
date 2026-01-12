@@ -4,6 +4,7 @@
 #include "TankLearningAgentsInteractor.h"
 #include "TankLearningAgentsTrainer.h"
 #include "BaseTankAIController.h"
+#include "AILearningAgentsController.h"
 #include "TankWaypointComponent.h"
 #include "LearningAgentsManager.h"
 #include "LearningAgentsPolicy.h"
@@ -742,12 +743,16 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 			ABaseTankAIController* AIController = Cast<ABaseTankAIController>(AgentTank->GetController());
 			UTankWaypointComponent* WaypointComp = AIController ? AIController->GetWaypointComponent() : nullptr;
 
+			// Check if AI is in combat mode - if so, CombatManeuverComponent handles waypoints
+			AAILearningAgentsController* AILearningController = Cast<AAILearningAgentsController>(AIController);
+			const bool bInCombatMode = AILearningController && AILearningController->IsInCombatMode();
+
 			// Check waypoint progress using AI's WaypointComponent
 			if (bUseWaypointPathFollowing && WaypointComp && WaypointComp->HasActiveTarget())
 			{
 				// WaypointComponent handles waypoint advancement internally via TickComponent
-				// Just check if target reached
-				if (WaypointComp->IsTargetReached())
+				// Just check if target reached - but ONLY generate new patrol target if NOT in combat mode
+				if (WaypointComp->IsTargetReached() && !bInCombatMode)
 				{
 					UE_LOG(LogTemp, Warning, TEXT("AI INFERENCE: Target reached! Generating new target..."));
 
@@ -765,7 +770,7 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 					}
 				}
 			}
-			else if (!bUseWaypointPathFollowing)
+			else if (!bUseWaypointPathFollowing && !bInCombatMode)
 			{
 				// Direct target tracking (no waypoints)
 				const FVector AILocation = AgentTank->GetActorLocation();
@@ -1106,6 +1111,20 @@ void ATankLearningAgentsManager::EnableInferenceMode()
 		else
 		{
 			UE_LOG(LogTemp, Error, TEXT("  → Failed to generate target for AI!"));
+		}
+	}
+
+	// ========================================================================
+	// STEP 5: Enable enemy detection on AI controller
+	// ========================================================================
+	// Detection is disabled by default (bDetectionEnabled = false)
+	// We enable it now that inference mode is active
+	if (AAILearningAgentsController* AIController = Cast<AAILearningAgentsController>(AgentTank->GetController()))
+	{
+		if (UEnemyDetectionComponent* DetectionComp = AIController->GetEnemyDetectionComponent())
+		{
+			DetectionComp->SetDetectionEnabled(true);
+			UE_LOG(LogTemp, Warning, TEXT("STEP 5: Enemy detection ENABLED on AI controller"));
 		}
 	}
 

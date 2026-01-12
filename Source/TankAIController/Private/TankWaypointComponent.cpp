@@ -44,6 +44,19 @@ void UTankWaypointComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		}
 	}
 
+	// DEBUG: Log NavMesh waypoint progress periodically
+	static int32 NavMeshDebugCounter = 0;
+	if (bHasActiveTarget && ++NavMeshDebugCounter % 60 == 0) // Every 1s at 60fps
+	{
+		const FVector PawnLoc = GetOwnerPawnLocation();
+		const FVector WPLoc = GetCurrentWaypointLocation();
+		const float DistToWP = FVector::Dist2D(PawnLoc, WPLoc);
+
+		UE_LOG(LogTemp, Log, TEXT("[NavMesh WP] Index=%d/%d, DistToCurrentWP=%.0fcm, ReachRadius=%.0fcm, Target=%.0fcm away"),
+			CurrentWaypointIndex, Waypoints.Num(), DistToWP, WaypointReachRadius,
+			FVector::Dist2D(PawnLoc, CurrentTargetLocation));
+	}
+
 	if (bShowDebugVisualization)
 	{
 		DrawDebugVisualization();

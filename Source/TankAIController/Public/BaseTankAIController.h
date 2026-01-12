@@ -100,7 +100,7 @@ protected:
 
 	/** Whether to draw debug lines for traces */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
-	bool bDrawDebugTraces = true;
+	bool bDrawDebugTraces = false;
 
 	// ========== LATERAL CLEARANCE (NARROW CORRIDOR SPECIFIC) ==========
 

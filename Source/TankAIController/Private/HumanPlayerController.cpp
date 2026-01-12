@@ -4,6 +4,7 @@
 #include "WR_Tank_Pawn.h"
 #include "WR_ControlsInterface.h"
 #include "TankLearningAgentsManager.h"
+#include "TankTrainingGameMode.h"
 #include "Engine/Engine.h"
 #include "GameFramework/PlayerInput.h"
 #include "Kismet/GameplayStatics.h"
@@ -210,19 +211,36 @@ void AHumanPlayerController::StartStopTraining()
 
 void AHumanPlayerController::EnableInference()
 {
-	ATankLearningAgentsManager* Manager = GetLearningAgentsManager();
-	if (!Manager)
+	// Get game mode and start all AI tanks
+	ATankTrainingGameMode* GameMode = Cast<ATankTrainingGameMode>(GetWorld()->GetAuthGameMode());
+	if (GameMode)
 	{
-		UE_LOG(LogTemp, Error, TEXT("HumanPlayerController::EnableInference - Cannot find TankLearningAgentsManager!"));
+		// Toggle AI tanks on/off
+		if (GameMode->AreAITanksRunning())
+		{
+			GameMode->StopAllAITanks();
+		}
+		else
+		{
+			GameMode->StartAllAITanks();
+		}
 		return;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("HumanPlayerController: Enabling inference mode..."));
-	Manager->EnableInferenceMode();
-
-	if (GEngine)
+	// Fallback: Try Learning Agents Manager (legacy behavior)
+	ATankLearningAgentsManager* Manager = GetLearningAgentsManager();
+	if (Manager)
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Cyan, TEXT("INFERENCE MODE ENABLED - AI is now driving!"));
+		Manager->EnableInferenceMode();
+
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Cyan, TEXT("INFERENCE MODE ENABLED - AI is now driving!"));
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("HumanPlayerController::EnableInference - No GameMode or Manager found!"));
 	}
 }
 

@@ -238,8 +238,8 @@ protected:
 
 	// ========== INTERNAL STATE ==========
 
-	/** Is detection currently enabled */
-	bool bDetectionEnabled = true;
+	/** Is detection currently enabled - DISABLED by default, enabled when inference mode starts (NumPad 7) */
+	bool bDetectionEnabled = false;
 
 	/** Time accumulator for detection updates */
 	float DetectionUpdateTimer = 0.0f;

@@ -5,8 +5,10 @@
 #include "HumanPlayerController.h"
 #include "AILearningAgentsController.h"
 #include "TankLearningAgentsManager.h"
+#include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
 #include "EngineUtils.h"
+#include "Engine/Engine.h"
 
 ATankTrainingGameMode::ATankTrainingGameMode()
 {
@@ -40,7 +42,6 @@ ATankTrainingGameMode::ATankTrainingGameMode()
 
 void ATankTrainingGameMode::BeginPlay()
 {
-	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: BeginPlay called!"));
 	Super::BeginPlay();
 
 	// Validate tank classes
@@ -50,9 +51,6 @@ void ATankTrainingGameMode::BeginPlay()
 		return;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: TrainerTankClass: %s, AITankClass: %s"),
-		*TrainerTankClass->GetName(), *AITankClass->GetName());
-
 	// Check if world is valid
 	if (!GetWorld())
 	{
@@ -61,8 +59,6 @@ void ATankTrainingGameMode::BeginPlay()
 	}
 
 	// 1. CLEANUP: Destroy all existing pawns and tanks from scene
-	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Cleaning up existing pawns and tanks from scene"));
-
 	TArray<AActor*> FoundPawns;
 	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APawn::StaticClass(), FoundPawns);
 
@@ -70,15 +66,21 @@ void ATankTrainingGameMode::BeginPlay()
 	{
 		if (Pawn)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("  Destroying pawn: %s (Class: %s)"), *Pawn->GetName(), *Pawn->GetClass()->GetName());
 			Pawn->Destroy();
 		}
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Destroyed %d pawn(s) from scene"), FoundPawns.Num());
-
-	// 2. Spawn AI agent tank first
-	SpawnAgentTank();
+	// 2. Spawn AI tanks
+	if (bSpawnAIAtPlayerStarts)
+	{
+		// Spawn AI tank at each PlayerStart location
+		SpawnAITanksAtPlayerStarts();
+	}
+	else
+	{
+		// Legacy: Spawn single AI tank at AgentSpawnLocation
+		SpawnAgentTank();
+	}
 
 	// 3. Spawn trainer tank and possess it
 	SpawnTrainerTank();
@@ -86,114 +88,201 @@ void ATankTrainingGameMode::BeginPlay()
 	// 4. Register tanks with Learning Agents Manager
 	RegisterTanksWithManager();
 
-	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Training setup complete."));
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Setup complete"));
+	UE_LOG(LogTemp, Warning, TEXT("  -> AI Tanks: %d"), AITanks.Num());
+	UE_LOG(LogTemp, Warning, TEXT("  -> AI Movement: DISABLED (press NumPad7 to start)"));
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
 }
 
 void ATankTrainingGameMode::SpawnTrainerTank()
 {
 	// Get the first player controller (should be HumanPlayerController)
 	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
-	if (PC)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Found PlayerController: %s"), *PC->GetClass()->GetName());
-	}
-	else
+	if (!PC)
 	{
 		UE_LOG(LogTemp, Error, TEXT("TankTrainingGameMode: No PlayerController found!"));
 		return;
 	}
 
 	HumanController = Cast<AHumanPlayerController>(PC);
-
 	if (!HumanController)
 	{
-		UE_LOG(LogTemp, Error, TEXT("TankTrainingGameMode: PlayerController is not AHumanPlayerController! It is: %s"), *PC->GetClass()->GetName());
+		UE_LOG(LogTemp, Error, TEXT("TankTrainingGameMode: PlayerController is not AHumanPlayerController!"));
 		return;
 	}
-
-	// Use configured spawn location
-	const FVector SpawnLocation = TrainerSpawnLocation;
 
 	// Setup spawn parameters
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-	SpawnParams.Name = FName(TEXT("BP_Trainer_Tank"));
+	SpawnParams.Name = FName(TEXT("Trainer_Tank"));
 
-	// Spawn trainer tank using BP_Trainer_Tank class
+	// Spawn trainer tank
 	TrainerTank = GetWorld()->SpawnActor<AWR_Tank_Pawn>(
 		TrainerTankClass,
-		SpawnLocation,
+		TrainerSpawnLocation,
 		TrainerSpawnRotation,
 		SpawnParams
 	);
 
 	if (TrainerTank)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: BP_Trainer_Tank spawned successfully"));
-		UE_LOG(LogTemp, Warning, TEXT("  -> Tank Name: %s"), *TrainerTank->GetName());
-		UE_LOG(LogTemp, Warning, TEXT("  -> Tank Class: %s"), *TrainerTank->GetClass()->GetName());
-		UE_LOG(LogTemp, Warning, TEXT("  -> Tank Location: %s"), *SpawnLocation.ToString());
-
-		// Possess the trainer tank with human controller
-		UE_LOG(LogTemp, Warning, TEXT("  -> Possessing tank with HumanPlayerController: %s"), *HumanController->GetName());
 		HumanController->Possess(TrainerTank);
-
-		// Verify possession
-		if (HumanController->GetPawn() == TrainerTank)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("  -> Possession SUCCESSFUL - Controller->GetPawn() == TrainerTank"));
-		}
-		else
-		{
-			UE_LOG(LogTemp, Error, TEXT("  -> Possession FAILED - Controller->GetPawn() != TrainerTank"));
-		}
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("TankTrainingGameMode: Failed to spawn BP_Trainer_Tank!"));
+		UE_LOG(LogTemp, Error, TEXT("TankTrainingGameMode: Failed to spawn Trainer Tank!"));
 	}
 }
 
 void ATankTrainingGameMode::SpawnAgentTank()
 {
+	// Legacy method: Spawn single AI tank at AgentSpawnLocation
+	AWR_Tank_Pawn* SpawnedTank = SpawnAgentTankAtLocation(AgentSpawnLocation, AgentSpawnRotation);
+
+	// Store as legacy AgentTank reference (first AI tank)
+	if (SpawnedTank && AITanks.Num() > 0)
+	{
+		AgentTank = AITanks[0];
+		AIController = AIControllers.Num() > 0 ? AIControllers[0] : nullptr;
+	}
+}
+
+AWR_Tank_Pawn* ATankTrainingGameMode::SpawnAgentTankAtLocation(const FVector& Location, const FRotator& Rotation)
+{
 	// Create AI controller for agent tank
-	AIController = GetWorld()->SpawnActor<AAILearningAgentsController>(
+	AAILearningAgentsController* NewController = GetWorld()->SpawnActor<AAILearningAgentsController>(
 		AAILearningAgentsController::StaticClass()
 	);
 
-	if (!AIController)
+	if (!NewController)
 	{
 		UE_LOG(LogTemp, Error, TEXT("TankTrainingGameMode: Failed to spawn AILearningAgentsController!"));
-		return;
+		return nullptr;
 	}
-
-	// Use configured spawn location
-	const FVector SpawnLocation = AgentSpawnLocation;
 
 	// Setup spawn parameters
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-	SpawnParams.Name = FName(TEXT("BP_AI_Tank"));
+	SpawnParams.Name = MakeUniqueObjectName(GetWorld(), AWR_Tank_Pawn::StaticClass(), FName(TEXT("AI_Tank")));
 
-	// Spawn AI agent tank using BP_AI_Tank class
-	AgentTank = GetWorld()->SpawnActor<AWR_Tank_Pawn>(
+	// Spawn AI tank
+	AWR_Tank_Pawn* NewTank = GetWorld()->SpawnActor<AWR_Tank_Pawn>(
 		AITankClass,
-		SpawnLocation,
-		AgentSpawnRotation,
+		Location,
+		Rotation,
 		SpawnParams
 	);
 
-	if (AgentTank)
+	if (NewTank)
 	{
-		// Possess the agent tank with AI controller
-		AIController->Possess(AgentTank);
+		// Possess the tank with AI controller
+		NewController->Possess(NewTank);
 
-		UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: BP_AI_Tank spawned and possessed at location: %s"),
-			*SpawnLocation.ToString());
+		// AI movement starts DISABLED - will be enabled when StartAllAITanks() is called
+		NewController->SetAIMovementEnabled(false);
+
+		// Store references
+		AITanks.Add(NewTank);
+		AIControllers.Add(NewController);
+
+		return NewTank;
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("TankTrainingGameMode: Failed to spawn BP_AI_Tank!"));
+		UE_LOG(LogTemp, Error, TEXT("TankTrainingGameMode: Failed to spawn AI Tank at %s!"), *Location.ToString());
+		NewController->Destroy();
+		return nullptr;
+	}
+}
+
+void ATankTrainingGameMode::SpawnAITanksAtPlayerStarts()
+{
+	// Find all PlayerStart actors in the level
+	TArray<AActor*> FoundPlayerStarts;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APlayerStart::StaticClass(), FoundPlayerStarts);
+
+	if (FoundPlayerStarts.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: No PlayerStart actors found! Spawning at AgentSpawnLocation instead."));
+		SpawnAgentTank();
+		return;
+	}
+
+	// Spawn AI tank at each PlayerStart
+	for (AActor* PlayerStartActor : FoundPlayerStarts)
+	{
+		APlayerStart* PlayerStart = Cast<APlayerStart>(PlayerStartActor);
+		if (PlayerStart)
+		{
+			const FVector SpawnLocation = PlayerStart->GetActorLocation();
+			const FRotator SpawnRotation = PlayerStart->GetActorRotation();
+
+			AWR_Tank_Pawn* SpawnedTank = SpawnAgentTankAtLocation(SpawnLocation, SpawnRotation);
+			if (SpawnedTank)
+			{
+				UE_LOG(LogTemp, Log, TEXT("TankTrainingGameMode: Spawned AI Tank at PlayerStart: %s"), *SpawnLocation.ToString());
+			}
+		}
+	}
+
+	// Store first tank as legacy AgentTank reference
+	if (AITanks.Num() > 0)
+	{
+		AgentTank = AITanks[0];
+		AIController = AIControllers.Num() > 0 ? AIControllers[0] : nullptr;
+	}
+}
+
+void ATankTrainingGameMode::StartAllAITanks()
+{
+	if (bAITanksRunning)
+	{
+		return;
+	}
+
+	bAITanksRunning = true;
+
+	for (AAILearningAgentsController* Controller : AIControllers)
+	{
+		if (Controller)
+		{
+			Controller->SetAIMovementEnabled(true);
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Started %d AI tanks!"), AIControllers.Num());
+
+	if (GEngine)
+	{
+		FString Message = FString::Printf(TEXT("AI TANKS STARTED (%d tanks)"), AIControllers.Num());
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, Message, true, FVector2D(1.5f, 1.5f));
+	}
+}
+
+void ATankTrainingGameMode::StopAllAITanks()
+{
+	if (!bAITanksRunning)
+	{
+		return;
+	}
+
+	bAITanksRunning = false;
+
+	for (AAILearningAgentsController* Controller : AIControllers)
+	{
+		if (Controller)
+		{
+			Controller->SetAIMovementEnabled(false);
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Stopped %d AI tanks!"), AIControllers.Num());
+
+	if (GEngine)
+	{
+		FString Message = FString::Printf(TEXT("AI TANKS STOPPED (%d tanks)"), AIControllers.Num());
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, Message, true, FVector2D(1.5f, 1.5f));
 	}
 }
 

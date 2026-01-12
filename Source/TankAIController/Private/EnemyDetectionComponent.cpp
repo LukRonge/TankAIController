@@ -77,15 +77,11 @@ void UEnemyDetectionComponent::BeginPlay()
 	DetectedEnemies.Reserve(MaxTrackedEnemies);
 	CachedPotentialTargets.Reserve(32);
 
-	// Initial target scan
-	if (GetOwner()->HasAuthority())
-	{
-		RefreshPotentialTargets();
-	}
+	// NOTE: Detection is DISABLED by default (bDetectionEnabled = false)
+	// It will be enabled when EnableInferenceMode() is called (NumPad 7)
+	// This keeps the AI tank inactive until explicitly started.
 
-	// NOTE: Turret detection verification happens on first GetEyeLocation/GetLookDirection call
-	// because at BeginPlay time, the Controller may not have possessed a pawn yet.
-	// Log will appear when detection actually starts working.
+	UE_LOG(LogTemp, Log, TEXT("EnemyDetectionComponent: BeginPlay - Detection DISABLED (waiting for inference mode)"));
 }
 
 void UEnemyDetectionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -99,8 +95,14 @@ void UEnemyDetectionComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	// Check if detection is enabled (disabled by default until inference mode starts)
+	if (!bDetectionEnabled)
+	{
+		return;
+	}
+
 	// Server-authoritative detection only
-	if (!GetOwner()->HasAuthority() || !bDetectionEnabled)
+	if (!GetOwner() || !GetOwner()->HasAuthority())
 	{
 		return;
 	}
@@ -592,7 +594,22 @@ bool UEnemyDetectionComponent::IsEnemy(AActor* Actor) const
 	}
 
 	// Check other actor's team via their detection component
-	if (UEnemyDetectionComponent* OtherDetection = Actor->FindComponentByClass<UEnemyDetectionComponent>())
+	// First try on the actor itself
+	UEnemyDetectionComponent* OtherDetection = Actor->FindComponentByClass<UEnemyDetectionComponent>();
+
+	// If not found on actor (e.g., tank pawn), try to find via controller
+	if (!OtherDetection)
+	{
+		if (APawn* OtherPawn = Cast<APawn>(Actor))
+		{
+			if (AController* OtherController = OtherPawn->GetController())
+			{
+				OtherDetection = OtherController->FindComponentByClass<UEnemyDetectionComponent>();
+			}
+		}
+	}
+
+	if (OtherDetection)
 	{
 		// Same team = not enemy
 		if (OtherDetection->TeamID == TeamID)
@@ -603,7 +620,7 @@ bool UEnemyDetectionComponent::IsEnemy(AActor* Actor) const
 		return OtherDetection->TeamID >= 0;
 	}
 
-	// No detection component = assume enemy
+	// No detection component = assume enemy (e.g., human player without AI controller)
 	return true;
 }
 

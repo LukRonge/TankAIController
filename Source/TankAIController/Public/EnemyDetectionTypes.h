@@ -132,9 +132,9 @@ struct TANKAICONTROLLER_API FDetectionConfig
 
 	// ========== RANGE & FOV ==========
 
-	/** Maximum detection range in cm (50m default) */
+	/** Maximum detection range in cm (80m default - extended for long range combat) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Detection|Range", meta = (ClampMin = "100", ClampMax = "100000"))
-	float MaxDetectionRange = 5000.0f;
+	float MaxDetectionRange = 8000.0f;
 
 	/** Close range where detection is instant (5m default) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Detection|Range", meta = (ClampMin = "50", ClampMax = "1000"))
