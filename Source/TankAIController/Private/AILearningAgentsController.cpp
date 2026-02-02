@@ -8,6 +8,7 @@
 #include "AIShootingTypes.h"
 #include "WR_Tank_Pawn.h"
 #include "WR_Turret.h"
+#include "WR_ControlsInterface.h"
 #include "Math/UnrealMathUtility.h"
 #include "Kismet/KismetMathLibrary.h"
 
@@ -48,6 +49,16 @@ void AAILearningAgentsController::OnPossess(APawn* InPawn)
 	{
 		ControlledTank->bUseAITurretControl = true;
 		UE_LOG(LogTemp, Log, TEXT("AAILearningAgentsController::OnPossess: bUseAITurretControl = TRUE (AI handles turret)"));
+
+		// Initialize Learning Agents inference when we have a valid tank
+		// BeginPlay runs before OnPossess, so ControlledTank may be null there
+		if (bUseLearningAgentsInference && !bRegisteredWithSharedManager)
+		{
+			InitializeLearningAgentsForInference();
+		}
+
+		// Enable AI movement automatically after possess
+		SetAIMovementEnabled(true);
 	}
 }
 
@@ -253,6 +264,12 @@ void AAILearningAgentsController::SetAIMovementEnabled(bool bEnabled)
 {
 	bAIMovementEnabled = bEnabled;
 
+	// Also enable/disable movement on the tank itself
+	if (ControlledTank)
+	{
+		IWR_ControlsInterface::Execute_UpdateMovementEnabled(ControlledTank, bEnabled);
+	}
+
 	// Reset movement state when disabling
 	if (!bEnabled)
 	{
@@ -261,10 +278,22 @@ void AAILearningAgentsController::SetAIMovementEnabled(bool bEnabled)
 		CurrentBrake = 0.0f;
 		ApplyMovementToTank(0.0f, 0.0f);
 
+		// Clear waypoints so new ones are generated on respawn
+		if (WaypointComponent)
+		{
+			WaypointComponent->ClearTarget();
+		}
+
 		// Disable enemy detection when AI is disabled
 		if (EnemyDetectionComponent)
 		{
 			EnemyDetectionComponent->SetDetectionEnabled(false);
+		}
+
+		// Disable shooting when AI is disabled
+		if (ShootingComponent)
+		{
+			ShootingComponent->SetShootingEnabled(false);
 		}
 	}
 	else
@@ -287,7 +316,6 @@ void AAILearningAgentsController::SetAIMovementEnabled(bool bEnabled)
 		if (EnemyDetectionComponent)
 		{
 			EnemyDetectionComponent->SetDetectionEnabled(true);
-			UE_LOG(LogTemp, Warning, TEXT("AILearningAgentsController: Enemy detection ENABLED"));
 		}
 
 		// Enable shooting component
@@ -1226,8 +1254,8 @@ void AAILearningAgentsController::InitializeLearningAgentsForInference()
 		UE_LOG(LogTemp, Warning, TEXT("AILearningAgentsController: Creating SHARED Learning Agents"));
 		UE_LOG(LogTemp, Warning, TEXT("========================================"));
 
-		// 1. Create shared Manager
-		SharedManager = NewObject<ULearningAgentsManager>(GetWorld(), ULearningAgentsManager::StaticClass(), TEXT("SharedLearningAgentsManager"));
+		// 1. Create shared Manager - use controller as outer for proper component registration
+		SharedManager = NewObject<ULearningAgentsManager>(this, ULearningAgentsManager::StaticClass(), TEXT("SharedLearningAgentsManager"));
 		if (!SharedManager)
 		{
 			UE_LOG(LogTemp, Error, TEXT("  -> Failed to create SharedManager!"));
