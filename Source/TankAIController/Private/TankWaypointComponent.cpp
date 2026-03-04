@@ -17,6 +17,9 @@ void UTankWaypointComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Force disable debug visualization (overrides serialized values from existing instances)
+	bShowDebugVisualization = false;
+
 	// Cache the pawn reference
 	if (AActor* Owner = GetOwner())
 	{

@@ -15,6 +15,8 @@ AWR_AITankController::AWR_AITankController()
 	// Enable replication
 	bReplicates = true;
 
+	UE_LOG(LogTemp, Log, TEXT("[AIFlow] AWR_AITankController CONSTRUCTED: %s"), *AIPlayerName);
+
 	// NOTE: Tank spawning and possession is handled by GameMode.
 	// GameMode spawns tank, then calls this->Possess(Tank).
 	// Learning Agents inference is automatically initialized in OnPossess.
@@ -27,6 +29,9 @@ void AWR_AITankController::BeginPlay()
 
 void AWR_AITankController::OnPossess(APawn* InPawn)
 {
+	UE_LOG(LogTemp, Warning, TEXT("[AIFlow] === AWR_AITankController::OnPossess START === AI: %s | Pawn: %s"),
+		*AIPlayerName, InPawn ? *InPawn->GetName() : TEXT("NULL"));
+
 	// Skip AAILearningAgentsController::OnPossess - we don't want auto-enable of movement/inference
 	// Call grandparent directly
 	ABaseTankAIController::OnPossess(InPawn);
@@ -35,7 +40,16 @@ void AWR_AITankController::OnPossess(APawn* InPawn)
 	if (ControlledTank)
 	{
 		ControlledTank->bUseAITurretControl = true;
+		UE_LOG(LogTemp, Log, TEXT("[AIFlow]   OnPossess: Tank possessed OK, bUseAITurretControl=true | Tank: %s | PlayerIndex: %d"),
+			*ControlledTank->GetName(), PlayerIndex);
 	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("[AIFlow]   OnPossess: FAILED - ControlledTank is NULL after ABaseTankAIController::OnPossess!"));
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[AIFlow] === AWR_AITankController::OnPossess END === AI: %s | GameStart: %d | GameEnd: %d"),
+		*AIPlayerName, bIsGameStart, bIsGameEnd);
 
 	// NOTE: Initialize_PlayerNetID is NOT called here!
 	// The PlayerNetID is actually the index in GameState->LoggedPlayers array.
@@ -51,6 +65,9 @@ void AWR_AITankController::OnUnPossess()
 {
 	// Get pawn before calling Super (which clears it)
 	APawn* PreviousPawn = GetPawn();
+
+	UE_LOG(LogTemp, Warning, TEXT("[AIFlow] === AWR_AITankController::OnUnPossess === AI: %s | PlayerIndex: %d | Pawn: %s | bRegisteredWithSharedManager: %d"),
+		*AIPlayerName, PlayerIndex, PreviousPawn ? *PreviousPawn->GetName() : TEXT("NULL"), bRegisteredWithSharedManager);
 
 	if (PreviousPawn)
 	{
@@ -91,6 +108,9 @@ void AWR_AITankController::PrepareStartRound()
 		return;
 	}
 
+	UE_LOG(LogTemp, Warning, TEXT("[AIFlow] PrepareStartRound: AI: %s | PlayerIndex: %d | bIsGameStart was: %d"),
+		*AIPlayerName, PlayerIndex, bIsGameStart);
+
 	// Set game start flag to false
 	bIsGameStart = false;
 
@@ -107,6 +127,9 @@ void AWR_AITankController::StartRound()
 		return;
 	}
 
+	UE_LOG(LogTemp, Warning, TEXT("[AIFlow] === StartRound === AI: %s | PlayerIndex: %d | Tank: %s | bRegisteredWithSharedManager: %d"),
+		*AIPlayerName, PlayerIndex, ControlledTank ? *ControlledTank->GetName() : TEXT("NULL"), bRegisteredWithSharedManager);
+
 	// Set game state flags
 	bIsGameStart = true;
 	bIsGameEnd = false;
@@ -114,11 +137,16 @@ void AWR_AITankController::StartRound()
 	// Initialize Learning Agents inference now (deferred from OnPossess)
 	if (bUseLearningAgentsInference && !bRegisteredWithSharedManager && ControlledTank)
 	{
+		UE_LOG(LogTemp, Log, TEXT("[AIFlow]   StartRound: Initializing Learning Agents inference (deferred)..."));
 		InitializeLearningAgentsForInference();
 	}
 
 	// Enable AI movement
+	UE_LOG(LogTemp, Log, TEXT("[AIFlow]   StartRound: Enabling AI movement..."));
 	SetAIMovementEnabled(true);
+
+	UE_LOG(LogTemp, Warning, TEXT("[AIFlow] === StartRound COMPLETE === AI: %s | MovementEnabled: %d | InferenceActive: %d"),
+		*AIPlayerName, bAIMovementEnabled, bRegisteredWithSharedManager);
 }
 
 void AWR_AITankController::EndRound()
@@ -128,6 +156,9 @@ void AWR_AITankController::EndRound()
 	{
 		return;
 	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[AIFlow] === EndRound === AI: %s | PlayerIndex: %d | Kills: %d | Deaths: %d | Score: %d"),
+		*AIPlayerName, PlayerIndex, Kills, Deaths, Score);
 
 	// Set game state flags
 	bIsGameStart = false;
@@ -145,10 +176,15 @@ void AWR_AITankController::RespawnTankAfterDestroy_Implementation()
 		return;
 	}
 
+	UE_LOG(LogTemp, Warning, TEXT("[AIFlow] === RESPAWN START === AI: %s | PlayerIndex: %d | bIsRecovering: %d | bIsStuck: %d"),
+		*AIPlayerName, PlayerIndex, bIsRecovering, bIsStuck);
+
 	// Find MapConfiguration actor if not cached
 	if (!MapConfigurationActor)
 	{
 		MapConfigurationActor = FindMapConfigurationActor();
+		UE_LOG(LogTemp, Log, TEXT("[AIFlow]   Respawn: MapConfiguration %s"),
+			MapConfigurationActor ? TEXT("FOUND") : TEXT("NOT FOUND"));
 	}
 
 	// Get respawn transform from MapConfiguration
@@ -157,21 +193,27 @@ void AWR_AITankController::RespawnTankAfterDestroy_Implementation()
 		// Get spawn transform from map configuration (randomized spawn point)
 		FTransform RespawnTransform = MapConfigurationActor->MakeTankDeathMatchTransform();
 
+		UE_LOG(LogTemp, Log, TEXT("[AIFlow]   Respawn: SpawnLocation: %s"),
+			*RespawnTransform.GetLocation().ToString());
+
 		// Get controlled tank pawn
 		APawn* ControlledPawn = GetPawn();
 		if (ControlledPawn && ControlledPawn->GetClass()->ImplementsInterface(UWR_ControlsInterface::StaticClass()))
 		{
 			// Call RespawnTank on the controlled pawn
 			IWR_ControlsInterface::Execute_RespawnTank(ControlledPawn, RespawnTransform, true);
+			UE_LOG(LogTemp, Warning, TEXT("[AIFlow] === RESPAWN COMPLETE === AI: %s | Tank: %s"),
+				*AIPlayerName, *ControlledPawn->GetName());
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("AWR_AITankController::RespawnTankAfterDestroy - %s has no valid pawn"), *AIPlayerName);
+			UE_LOG(LogTemp, Error, TEXT("[AIFlow]   RESPAWN FAILED: AI %s has no valid pawn! Pawn: %s"),
+				*AIPlayerName, ControlledPawn ? *ControlledPawn->GetName() : TEXT("NULL"));
 		}
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AWR_AITankController::RespawnTankAfterDestroy - No MapConfiguration actor found!"));
+		UE_LOG(LogTemp, Error, TEXT("[AIFlow]   RESPAWN FAILED: No MapConfiguration actor found for AI: %s"), *AIPlayerName);
 	}
 }
 
@@ -196,10 +238,15 @@ EWR_TeamTypeEnum AWR_AITankController::GetTeamType() const
 
 FWR_PlayerInfoStruct AWR_AITankController::MakePlayerInfoStruct() const
 {
+	UE_LOG(LogTemp, Log, TEXT("[AIFlow] MakePlayerInfoStruct: AI: %s | PlayerIndex: %d | Team: %d | Kills: %d | Deaths: %d | Score: %d"),
+		*AIPlayerName, PlayerIndex, TeamIndex, Kills, Deaths, Score);
+
 	FWR_PlayerInfoStruct PlayerInfo;
 
-	// AI doesn't have a real UniqueNetId, leave it empty/invalid
-	// PlayerInfo.PlayerUniqueId will be default (invalid)
+	// Create a synthetic UniqueNetId for the AI player
+	FString AIUniqueIdString = FString::Printf(TEXT("AI_%s_%d"), *AIPlayerName, PlayerIndex);
+	FUniqueNetIdRef AINetIdRef = FUniqueNetIdString::Create(AIUniqueIdString, NAME_None);
+	PlayerInfo.PlayerUniqueId = FUniqueNetIdRepl(AINetIdRef);
 
 	// Set player name from AI name
 	PlayerInfo.PlayerName = FName(*AIPlayerName);
@@ -233,6 +280,9 @@ FWR_PlayerInfoStruct AWR_AITankController::MakePlayerInfoStruct() const
 
 void AWR_AITankController::PC_Take_Damage_Implementation(int32 DamagedPlayerIndex, int32 KillerPlayerIndex, int32 AssistantPlayerIndex)
 {
+	UE_LOG(LogTemp, Warning, TEXT("[AIFlow] === PC_Take_Damage === AI: %s | KILLED! DamagedIdx: %d | KillerIdx: %d | AssistIdx: %d"),
+		*AIPlayerName, DamagedPlayerIndex, KillerPlayerIndex, AssistantPlayerIndex);
+
 	// Call Server_Take_Damage on GameState (same as human player controller Blueprint does)
 	// GameState handles stats, respawn, etc.
 	if (UWorld* World = GetWorld())
@@ -255,17 +305,26 @@ void AWR_AITankController::PC_Take_Damage_Implementation(int32 DamagedPlayerInde
 				Params.AssistantPlayerIndex = AssistantPlayerIndex;
 
 				GameState->ProcessEvent(ServerTakeDamageFunc, &Params);
+				UE_LOG(LogTemp, Log, TEXT("[AIFlow]   PC_Take_Damage: Server_Take_Damage called on GameState OK"));
 			}
 			else
 			{
-				UE_LOG(LogTemp, Warning, TEXT("AWR_AITankController::PC_Take_Damage - Server_Take_Damage function not found on GameState!"));
+				UE_LOG(LogTemp, Error, TEXT("[AIFlow]   PC_Take_Damage: Server_Take_Damage function NOT FOUND on GameState: %s"),
+					*GameState->GetClass()->GetName());
 			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("[AIFlow]   PC_Take_Damage: GameState is NULL!"));
 		}
 	}
 }
 
 void AWR_AITankController::UpdateMovementEnabled_Implementation(bool MovementEnabled)
 {
+	UE_LOG(LogTemp, Log, TEXT("[AIFlow] UpdateMovementEnabled: AI: %s | Enabled: %d -> %d | bIsRecovering: %d"),
+		*AIPlayerName, bAIMovementEnabled, MovementEnabled, bIsRecovering);
+
 	// Enable/disable AI movement (called when tank is destroyed/respawned)
 	SetAIMovementEnabled(MovementEnabled);
 }

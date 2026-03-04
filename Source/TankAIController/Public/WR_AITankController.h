@@ -45,7 +45,11 @@ public:
 
 	/** Set player index (called by GameMode) */
 	UFUNCTION(BlueprintCallable, Category = "AI|Player")
-	void SetPlayerIndex(int32 InPlayerIndex) { PlayerIndex = InPlayerIndex; }
+	void SetPlayerIndex(int32 InPlayerIndex)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[AIFlow] SetPlayerIndex: AI: %s | OldIndex: %d -> NewIndex: %d"), *AIPlayerName, PlayerIndex, InPlayerIndex);
+		PlayerIndex = InPlayerIndex;
+	}
 
 	/** Get AI player name */
 	UFUNCTION(BlueprintPure, Category = "AI|Player")

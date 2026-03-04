@@ -91,8 +91,9 @@ void AAILearningAgentsController::BeginPlay()
 		EnemyDetectionComponent->OnAwarenessStateChanged.AddDynamic(this, &AAILearningAgentsController::OnAwarenessStateChangedHandler);
 		EnemyDetectionComponent->OnEnemyLost.AddDynamic(this, &AAILearningAgentsController::OnEnemyLostHandler);
 
-		// Enable debug visualization for detection
-		EnemyDetectionComponent->bDrawDebug = bEnableDetectionDebug;
+		// Force disable debug visualization (overrides serialized values from existing instances)
+		bEnableDetectionDebug = false;
+		EnemyDetectionComponent->bDrawDebug = false;
 		EnemyDetectionComponent->DebugDrawDuration = 0.0f; // Single frame updates
 
 		UE_LOG(LogTemp, Log, TEXT("========================================"));
@@ -119,9 +120,10 @@ void AAILearningAgentsController::BeginPlay()
 		CombatManeuverComponent->OnManeuverCompleted.AddDynamic(this, &AAILearningAgentsController::OnManeuverCompletedHandler);
 		CombatManeuverComponent->OnWaypointAdvanced.AddDynamic(this, &AAILearningAgentsController::OnCombatWaypointAdvancedHandler);
 
-		// Enable debug visualization
-		CombatManeuverComponent->bDrawDebug = bEnableCombatDebug;
-		CombatManeuverComponent->bLogManeuverSelection = bEnableCombatDebug;
+		// Force disable debug visualization (overrides serialized values from existing instances)
+		bEnableCombatDebug = false;
+		CombatManeuverComponent->bDrawDebug = false;
+		CombatManeuverComponent->bLogManeuverSelection = false;
 
 		UE_LOG(LogTemp, Log, TEXT("========================================"));
 		UE_LOG(LogTemp, Log, TEXT("AAILearningAgentsController: CombatManeuver READY"));
@@ -143,8 +145,9 @@ void AAILearningAgentsController::BeginPlay()
 		ShootingComponent->SetOwnerTank(ControlledTank);
 		ShootingComponent->SetEnemyDetectionComponent(EnemyDetectionComponent);
 
-		// Enable debug visualization
-		ShootingComponent->bDrawDebug = bEnableShootingDebug;
+		// Force disable debug visualization (overrides serialized values from existing instances)
+		bEnableShootingDebug = false;
+		ShootingComponent->bDrawDebug = false;
 	}
 	else if (ShootingComponent)
 	{
@@ -154,9 +157,14 @@ void AAILearningAgentsController::BeginPlay()
 
 void AAILearningAgentsController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	UE_LOG(LogTemp, Warning, TEXT("[AIFlow] === EndPlay === Controller: %s | Reason: %d | AgentId: %d | bRegistered: %d"),
+		*GetName(), static_cast<int32>(EndPlayReason), LocalAgentId, bRegisteredWithSharedManager);
+
 	// Unregister this controller's tank from shared manager
 	if (bRegisteredWithSharedManager && SharedManager && LocalAgentId != INDEX_NONE)
 	{
+		UE_LOG(LogTemp, Log, TEXT("[AIFlow]   EndPlay: Removing agent %d from SharedManager (remaining agents: %d)"),
+			LocalAgentId, SharedManager->GetAgentNum() - 1);
 		SharedManager->RemoveAgent(LocalAgentId);
 		bRegisteredWithSharedManager = false;
 		LocalAgentId = INDEX_NONE;
@@ -203,6 +211,22 @@ void AAILearningAgentsController::Tick(float DeltaTime)
 
 	if (!ControlledTank)
 	{
+		return;
+	}
+
+	// If tank is destroyed, force-disable movement and reset all inputs
+	if (ControlledTank->IsTankDestroyed())
+	{
+		if (bAIMovementEnabled)
+		{
+			SetAIMovementEnabled(false);
+		}
+		// Reset controller input state
+		CurrentThrottle = 0.0f;
+		CurrentSteering = 0.0f;
+		CurrentBrake = 0.0f;
+		// Force stop vehicle (bypasses bIsDestroyed check in SetAIMovementInput)
+		ControlledTank->StopAIMovement();
 		return;
 	}
 
@@ -262,6 +286,12 @@ void AAILearningAgentsController::Tick(float DeltaTime)
 
 void AAILearningAgentsController::SetAIMovementEnabled(bool bEnabled)
 {
+	UE_LOG(LogTemp, Log, TEXT("[AIFlow] SetAIMovementEnabled: %s -> %s | Tank: %s | bIsRecovering: %d | bIsStuck: %d | bInCombatMode: %d"),
+		bAIMovementEnabled ? TEXT("ON") : TEXT("OFF"),
+		bEnabled ? TEXT("ON") : TEXT("OFF"),
+		ControlledTank ? *ControlledTank->GetName() : TEXT("NULL"),
+		bIsRecovering, bIsStuck, bInCombatMode);
+
 	bAIMovementEnabled = bEnabled;
 
 	// Also enable/disable movement on the tank itself
@@ -1285,7 +1315,7 @@ void AAILearningAgentsController::InitializeLearningAgentsForInference()
 		FLearningAgentsPolicySettings PolicySettings;
 		PolicySettings.HiddenLayerNum = 3;
 		PolicySettings.HiddenLayerSize = 128;
-		PolicySettings.bUseMemory = false;
+		PolicySettings.MemoryCell = ELearningAgentsMemoryCell::NoMemoryCell;
 		PolicySettings.MemoryStateSize = 0;
 		PolicySettings.InitialEncodedActionScale = 0.7f;
 		PolicySettings.ActivationFunction = ELearningAgentsActivationFunction::ELU;

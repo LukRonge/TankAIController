@@ -231,8 +231,22 @@ void UAIShootingComponent::UpdateShooting(float DeltaTime)
 		ExecuteFiring();
 		if (!ShootingState.bInBurst)
 		{
-			ShootingState.State = EShootingState::Cooldown;
-			ShootingState.BurstCooldownTimer = Config.BurstCooldown;
+			if (ShootingState.SelectedWeapon == EWeaponSlot::Primary)
+			{
+				// Primary weapon: skip cooldown, immediately start new burst for continuous fire
+				ShootingState.State = EShootingState::Firing;
+				ShootingState.TargetBurstSize = GenerateBurstSize();
+				ShootingState.CurrentBurstShots = 0;
+				ShootingState.bInBurst = true;
+				ShootingState.BurstShotTimer = 0.0f;
+				ShootingState.bIsFiringPrimary = true;
+			}
+			else
+			{
+				// Secondary weapon: use cooldown between shots
+				ShootingState.State = EShootingState::Cooldown;
+				ShootingState.BurstCooldownTimer = Config.BurstCooldown;
+			}
 		}
 		break;
 
@@ -397,8 +411,18 @@ void UAIShootingComponent::ExecuteFiring()
 {
 	if (!ShootingState.bInBurst || ShootingState.BurstShotTimer > 0.0f)
 	{
-		ShootingState.bIsFiringPrimary = false;
-		ShootingState.bIsFiringSecondary = false;
+		// Primary weapon: keep firing continuously while in burst (hold trigger)
+		// Only stop firing between bursts (cooldown state handles that)
+		if (ShootingState.SelectedWeapon == EWeaponSlot::Primary && ShootingState.bInBurst)
+		{
+			ShootingState.bIsFiringPrimary = true;
+			ShootingState.bIsFiringSecondary = false;
+		}
+		else
+		{
+			ShootingState.bIsFiringPrimary = false;
+			ShootingState.bIsFiringSecondary = false;
+		}
 		return;
 	}
 

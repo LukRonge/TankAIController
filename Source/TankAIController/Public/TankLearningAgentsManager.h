@@ -404,7 +404,7 @@ private:
 
 	/** Enable debug visualization of waypoints */
 	UPROPERTY(EditAnywhere, Category = "Tank Learning Agents|Waypoint System", meta = (EditCondition = "bUseWaypointPathFollowing"))
-	bool bShowWaypointVisualization = true;
+	bool bShowWaypointVisualization = false;
 
 	// ========== TARGET & WAYPOINT RUNTIME STATE ==========
 

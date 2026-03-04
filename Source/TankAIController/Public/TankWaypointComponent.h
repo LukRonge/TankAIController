@@ -48,7 +48,7 @@ public:
 
 	/** Enable debug visualization of waypoints */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Waypoint|Debug")
-	bool bShowDebugVisualization = true;
+	bool bShowDebugVisualization = false;
 
 	/** Color for waypoint debug spheres */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Waypoint|Debug")

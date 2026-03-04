@@ -35,6 +35,9 @@ void ATankLearningAgentsManager::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Force disable debug visualization (overrides serialized values from existing instances)
+	bShowWaypointVisualization = false;
+
 	// Create the base ULearningAgentsManager component
 	Manager = NewObject<ULearningAgentsManager>(this, ULearningAgentsManager::StaticClass(), TEXT("LearningAgentsManager"));
 	if (!Manager)
@@ -97,7 +100,7 @@ void ATankLearningAgentsManager::InitializeManager()
 	FLearningAgentsPolicySettings PolicySettings;
 	PolicySettings.HiddenLayerNum = HiddenLayerCount;      // Configurable (default: 3)
 	PolicySettings.HiddenLayerSize = HiddenLayerSize;      // Configurable (default: 128)
-	PolicySettings.bUseMemory = bEnableLSTMMemory;         // Configurable (default: false)
+	PolicySettings.MemoryCell = bEnableLSTMMemory ? ELearningAgentsMemoryCell::LearningAgentsGRU : ELearningAgentsMemoryCell::NoMemoryCell;
 	PolicySettings.MemoryStateSize = bEnableLSTMMemory ? LSTMMemorySize : 0;  // Only if memory enabled
 	PolicySettings.InitialEncodedActionScale = 0.7f;       // Allows larger actions from start
 	PolicySettings.ActivationFunction = ELearningAgentsActivationFunction::ELU;  // ELU handles negative inputs well
@@ -108,8 +111,8 @@ void ATankLearningAgentsManager::InitializeManager()
 	UE_LOG(LogTemp, Warning, TEXT("========================================"));
 	UE_LOG(LogTemp, Warning, TEXT("  -> Network Architecture: %d hidden layers x %d neurons"),
 		PolicySettings.HiddenLayerNum, PolicySettings.HiddenLayerSize);
-	UE_LOG(LogTemp, Warning, TEXT("  -> LSTM Memory: %s"), PolicySettings.bUseMemory ? TEXT("ENABLED") : TEXT("DISABLED"));
-	if (PolicySettings.bUseMemory)
+	UE_LOG(LogTemp, Warning, TEXT("  -> LSTM Memory: %s"), bEnableLSTMMemory ? TEXT("ENABLED") : TEXT("DISABLED"));
+	if (bEnableLSTMMemory)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("  -> Memory State Size: %d"), PolicySettings.MemoryStateSize);
 		UE_LOG(LogTemp, Warning, TEXT("  -> NOTE: LSTM enabled - smoother steering, but requires more training data"));

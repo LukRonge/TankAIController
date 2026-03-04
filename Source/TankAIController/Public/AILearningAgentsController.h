@@ -171,7 +171,7 @@ public:
 
 	/** Enable debug visualization for enemy detection (draws FOV cone, detection rays, etc.) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Detection")
-	bool bEnableDetectionDebug = true;
+	bool bEnableDetectionDebug = false;
 
 	// ========== COMBAT MANEUVER ==========
 
@@ -189,7 +189,7 @@ public:
 
 	/** Enable debug visualization for combat maneuvers */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Combat")
-	bool bEnableCombatDebug = true;
+	bool bEnableCombatDebug = false;
 
 	/** Check if currently in combat navigation mode */
 	UFUNCTION(BlueprintPure, Category = "AI|Combat")
@@ -214,7 +214,7 @@ public:
 
 	/** Enable debug visualization for shooting */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Shooting")
-	bool bEnableShootingDebug = true;
+	bool bEnableShootingDebug = false;
 
 	/** Set AI shooting difficulty */
 	UFUNCTION(BlueprintCallable, Category = "AI|Shooting")

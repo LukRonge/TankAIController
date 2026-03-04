@@ -252,11 +252,11 @@ public:
 
 	/** Draw debug visualization of maneuvers and waypoints */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Debug")
-	bool bDrawDebug = true;
+	bool bDrawDebug = false;
 
 	/** Log maneuver selection decisions */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Debug")
-	bool bLogManeuverSelection = true;
+	bool bLogManeuverSelection = false;
 
 	/** Duration for debug drawing (0 = single frame) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Debug")
