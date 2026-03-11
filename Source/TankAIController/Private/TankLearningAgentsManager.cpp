@@ -51,13 +51,13 @@ void ATankLearningAgentsManager::BeginPlay()
 
 	// Set MaxAgentNum on the underlying Manager component to match our MaxAgents setting
 	Manager->SetMaxAgentNum(MaxAgents);
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Set Manager MaxAgentNum to %d"), MaxAgents);
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Set Manager MaxAgentNum to %d"), MaxAgents);
 
 	// Initialize all Learning Agents components
 	InitializeManager();
 
 	// Tanks will be spawned and registered by TankTrainingGameMode
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Waiting for TankTrainingGameMode to spawn and register tanks..."));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Waiting for TankTrainingGameMode to spawn and register tanks..."));
 }
 
 void ATankLearningAgentsManager::InitializeManager()
@@ -68,8 +68,8 @@ void ATankLearningAgentsManager::InitializeManager()
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager::InitializeManager: Starting initialization..."));
-	UE_LOG(LogTemp, Log, TEXT("  -> MaxAgents setting: %d"), MaxAgents);
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::InitializeManager: Starting initialization..."));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> MaxAgents setting: %d"), MaxAgents);
 
 	// Get reference to manager for factory methods (they need ULearningAgentsManager*&)
 	ULearningAgentsManager* ManagerRef = Manager;
@@ -83,7 +83,7 @@ void ATankLearningAgentsManager::InitializeManager()
 
 	if (Interactor)
 	{
-		UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Interactor created successfully."));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Interactor created successfully."));
 	}
 	else
 	{
@@ -106,20 +106,20 @@ void ATankLearningAgentsManager::InitializeManager()
 	PolicySettings.ActivationFunction = ELearningAgentsActivationFunction::ELU;  // ELU handles negative inputs well
 	PolicySettings.bUseParallelEvaluation = true;          // Enable for GPU performance
 
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: POLICY CONFIGURATION (v4.0)"));
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> Network Architecture: %d hidden layers x %d neurons"),
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: POLICY CONFIGURATION (v4.0)"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Network Architecture: %d hidden layers x %d neurons"),
 		PolicySettings.HiddenLayerNum, PolicySettings.HiddenLayerSize);
-	UE_LOG(LogTemp, Warning, TEXT("  -> LSTM Memory: %s"), bEnableLSTMMemory ? TEXT("ENABLED") : TEXT("DISABLED"));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> LSTM Memory: %s"), bEnableLSTMMemory ? TEXT("ENABLED") : TEXT("DISABLED"));
 	if (bEnableLSTMMemory)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("  -> Memory State Size: %d"), PolicySettings.MemoryStateSize);
-		UE_LOG(LogTemp, Warning, TEXT("  -> NOTE: LSTM enabled - smoother steering, but requires more training data"));
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Memory State Size: %d"), PolicySettings.MemoryStateSize);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> NOTE: LSTM enabled - smoother steering, but requires more training data"));
 	}
-	UE_LOG(LogTemp, Warning, TEXT("  -> Activation Function: ELU"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> Parallel Evaluation: ENABLED"));
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Activation Function: ELU"));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Parallel Evaluation: ENABLED"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 
 	Policy = ULearningAgentsPolicy::MakePolicy(
 		ManagerRef,
@@ -137,7 +137,7 @@ void ATankLearningAgentsManager::InitializeManager()
 
 	if (Policy)
 	{
-		UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Policy created successfully."));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Policy created successfully."));
 	}
 	else
 	{
@@ -148,7 +148,7 @@ void ATankLearningAgentsManager::InitializeManager()
 	// NOTE: Controller is NOT needed for Imitation Learning workflow
 	// Controller is only used for hand-crafted policies (e.g., behavior trees generating actions)
 	// For Imitation Learning: Human input → Interactor → Recorder → ImitationTrainer → Policy
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Controller not created (not needed for Imitation Learning workflow)."));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Controller not created (not needed for Imitation Learning workflow)."));
 
 	// Create Communicator for training process (using shared memory for local development)
 	// IMPORTANT: Must specify train_behavior_cloning trainer for Imitation Learning (default is train_ppo)
@@ -167,7 +167,7 @@ void ATankLearningAgentsManager::InitializeManager()
 
 	if (Recorder)
 	{
-		UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Recorder created successfully."));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Recorder created successfully."));
 	}
 	else
 	{
@@ -187,7 +187,7 @@ void ATankLearningAgentsManager::InitializeManager()
 
 	if (ImitationTrainer)
 	{
-		UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Imitation Trainer created successfully."));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Imitation Trainer created successfully."));
 	}
 	else
 	{
@@ -195,14 +195,14 @@ void ATankLearningAgentsManager::InitializeManager()
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Initialization complete - All components created including Recorder and Imitation Trainer."));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Initialization complete - All components created including Recorder and Imitation Trainer."));
 }
 
 int32 ATankLearningAgentsManager::AddTankAgent(AActor* TankActor)
 {
 	if (!TankActor)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager::AddTankAgent: Cannot add null tank actor!"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::AddTankAgent: Cannot add null tank actor!"));
 		return INDEX_NONE;
 	}
 
@@ -213,9 +213,9 @@ int32 ATankLearningAgentsManager::AddTankAgent(AActor* TankActor)
 	}
 
 	// Log detailed information about the tank being added
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager::AddTankAgent: Attempting to add tank:"));
-	UE_LOG(LogTemp, Log, TEXT("  -> Tank Actor: %s (Class: %s)"), *TankActor->GetName(), *TankActor->GetClass()->GetName());
-	UE_LOG(LogTemp, Log, TEXT("  -> Manager MaxAgents: %d"), MaxAgents);
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::AddTankAgent: Attempting to add tank:"));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Tank Actor: %s (Class: %s)"), *TankActor->GetName(), *TankActor->GetClass()->GetName());
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Manager MaxAgents: %d"), MaxAgents);
 
 	// Check if tank has a controller
 	AWR_Tank_Pawn* TankPawn = Cast<AWR_Tank_Pawn>(TankActor);
@@ -224,11 +224,11 @@ int32 ATankLearningAgentsManager::AddTankAgent(AActor* TankActor)
 		AController* Controller = TankPawn->GetController();
 		if (Controller)
 		{
-			UE_LOG(LogTemp, Log, TEXT("  -> Tank Controller: %s (Class: %s)"), *Controller->GetName(), *Controller->GetClass()->GetName());
+			UE_LOG(LogTemp, Verbose, TEXT("  -> Tank Controller: %s (Class: %s)"), *Controller->GetName(), *Controller->GetClass()->GetName());
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("  -> Tank has NO Controller assigned!"));
+			UE_LOG(LogTemp, Verbose, TEXT("  -> Tank has NO Controller assigned!"));
 		}
 	}
 
@@ -237,7 +237,7 @@ int32 ATankLearningAgentsManager::AddTankAgent(AActor* TankActor)
 
 	if (AgentId != INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager::AddTankAgent: ✓ Successfully added tank agent %d for actor %s"),
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::AddTankAgent: ✓ Successfully added tank agent %d for actor %s"),
 			AgentId, *TankActor->GetName());
 	}
 	else
@@ -255,7 +255,7 @@ void ATankLearningAgentsManager::RemoveTankAgent(int32 AgentId)
 {
 	if (AgentId == INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Invalid agent ID!"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Invalid agent ID!"));
 		return;
 	}
 
@@ -268,7 +268,7 @@ void ATankLearningAgentsManager::RemoveTankAgent(int32 AgentId)
 	// Remove agent using the base manager component method
 	Manager->RemoveAgent(AgentId);
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Removed tank agent %d"), AgentId);
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Removed tank agent %d"), AgentId);
 }
 
 void ATankLearningAgentsManager::StartRecording()
@@ -281,7 +281,7 @@ void ATankLearningAgentsManager::StartRecording()
 
 	if (IsRecording())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Already recording!"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Already recording!"));
 		return;
 	}
 
@@ -293,7 +293,7 @@ void ATankLearningAgentsManager::StartRecording()
 
 	// Begin recording demonstrations from all agents
 	Recorder->BeginRecording();
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Started recording demonstrations from trainer tank."));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Started recording demonstrations from trainer tank."));
 
 	// Target-based recording: Generate first target
 	if (bUseTargetBasedRecording)
@@ -307,7 +307,7 @@ void ATankLearningAgentsManager::StartRecording()
 
 		if (bHasActiveTarget)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Target-based recording enabled - navigate to target!"));
+			UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Target-based recording enabled - navigate to target!"));
 		}
 		else
 		{
@@ -326,7 +326,7 @@ void ATankLearningAgentsManager::StopRecording()
 
 	if (!IsRecording())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Not currently recording!"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Not currently recording!"));
 		return;
 	}
 
@@ -337,16 +337,16 @@ void ATankLearningAgentsManager::StopRecording()
 		if (IsTargetReached())
 		{
 			// Complete the final target before stopping
-			UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Completing final target before stopping recording..."));
+			UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Completing final target before stopping recording..."));
 			OnTargetReached();
 		}
 		else
 		{
 			// Incomplete target - do NOT add to completed segments
 			const int32 IncompleteExperiences = RecordedExperiencesCount - CurrentSegment.StartExperienceIndex;
-			UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Recording stopped with INCOMPLETE target!"));
-			UE_LOG(LogTemp, Warning, TEXT("  -> Incomplete target experiences: %d frames (will be included in training)"), IncompleteExperiences);
-			UE_LOG(LogTemp, Warning, TEXT("  -> Note: Incomplete target data is minimal compared to completed targets"));
+			UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Recording stopped with INCOMPLETE target!"));
+			UE_LOG(LogTemp, Verbose, TEXT("  -> Incomplete target experiences: %d frames (will be included in training)"), IncompleteExperiences);
+			UE_LOG(LogTemp, Verbose, TEXT("  -> Note: Incomplete target data is minimal compared to completed targets"));
 
 			// Clear incomplete target state
 			bHasActiveTarget = false;
@@ -363,11 +363,11 @@ void ATankLearningAgentsManager::StopRecording()
 			}
 		}
 
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Target-based recording statistics:"));
-		UE_LOG(LogTemp, Warning, TEXT("  -> Completed targets: %d"), CompletedTargets);
-		UE_LOG(LogTemp, Warning, TEXT("  -> Total targets attempted: %d"), TargetSegments.Num());
-		UE_LOG(LogTemp, Warning, TEXT("  -> Valid experiences (completed targets): %d frames"), TotalValidExperiences);
-		UE_LOG(LogTemp, Warning, TEXT("  -> Total experiences (all): %d frames"), RecordedExperiencesCount);
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Target-based recording statistics:"));
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Completed targets: %d"), CompletedTargets);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Total targets attempted: %d"), TargetSegments.Num());
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Valid experiences (completed targets): %d frames"), TotalValidExperiences);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Total experiences (all): %d frames"), RecordedExperiencesCount);
 
 		// Destroy visualization
 		DestroyTargetVisualization();
@@ -380,13 +380,13 @@ void ATankLearningAgentsManager::StopRecording()
 	ValidateDataDiversity();
 
 	// Final recording summary
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: RECORDING COMPLETE"));
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> Total frames recorded: %d"), RecordedExperiencesCount);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Data stored in: In-memory buffer (ready for training)"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> Next step: Call StartTraining() to train the AI"));
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: RECORDING COMPLETE"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Total frames recorded: %d"), RecordedExperiencesCount);
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Data stored in: In-memory buffer (ready for training)"));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Next step: Call StartTraining() to train the AI"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 }
 
 void ATankLearningAgentsManager::StartTraining()
@@ -405,7 +405,7 @@ void ATankLearningAgentsManager::StartTraining()
 
 	if (IsTraining())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Already training!"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Already training!"));
 		return;
 	}
 
@@ -427,10 +427,10 @@ void ATankLearningAgentsManager::StartTraining()
 	}
 
 	// Log recording data summary
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Training data validation:"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> Recorded experiences: %d frames"), RecordedExperiencesCount);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Completed targets: %d"), GetCompletedTargetsCount());
-	UE_LOG(LogTemp, Warning, TEXT("  -> Data source: In-memory recording buffer"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Training data validation:"));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Recorded experiences: %d frames"), RecordedExperiencesCount);
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Completed targets: %d"), GetCompletedTargetsCount());
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Data source: In-memory recording buffer"));
 
 	// Configure Imitation Trainer Settings
 	FLearningAgentsImitationTrainerSettings ImitationTrainerSettings;
@@ -513,16 +513,16 @@ void ATankLearningAgentsManager::StartTraining()
 	TrainingSettings.bSaveSnapshots = true;
 	TrainingSettings.bUseMLflow = false;
 
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: OPTIMIZED TRAINING (v8.4) settings:"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> Samples: %d (%s dataset)"), RecordedExperiencesCount,
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: OPTIMIZED TRAINING (v8.4) settings:"));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Samples: %d (%s dataset)"), RecordedExperiencesCount,
 		RecordedExperiencesCount < 5000 ? TEXT("SMALL") : (RecordedExperiencesCount < 20000 ? TEXT("MEDIUM") : TEXT("LARGE")));
-	UE_LOG(LogTemp, Warning, TEXT("  -> BatchesPerEpoch: %d | TargetEpochs: %d (adaptive)"), BatchesPerEpoch, TargetEpochs);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Iterations: %d (clamped 1000-150000)"), AdaptiveIterations);
-	UE_LOG(LogTemp, Warning, TEXT("  -> BatchSize: %d | Window: %d (%s)"), TrainingSettings.BatchSize, TrainingSettings.Window,
+	UE_LOG(LogTemp, Verbose, TEXT("  -> BatchesPerEpoch: %d | TargetEpochs: %d (adaptive)"), BatchesPerEpoch, TargetEpochs);
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Iterations: %d (clamped 1000-150000)"), AdaptiveIterations);
+	UE_LOG(LogTemp, Verbose, TEXT("  -> BatchSize: %d | Window: %d (%s)"), TrainingSettings.BatchSize, TrainingSettings.Window,
 		TrainingSettings.Window > 1 ? TEXT("LSTM") : TEXT("no LSTM"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> ExpectedFrames: %d (for progress tracking)"), TotalExpectedFrames);
-	UE_LOG(LogTemp, Warning, TEXT("  -> LearningRate: %.5f | LRDecay: %.5f"), TrainingSettings.LearningRate, TrainingSettings.LearningRateDecay);
-	UE_LOG(LogTemp, Warning, TEXT("  -> WeightDecay: %.5f | ActionReg: %.4f"), TrainingSettings.WeightDecay, TrainingSettings.ActionRegularizationWeight);
+	UE_LOG(LogTemp, Verbose, TEXT("  -> ExpectedFrames: %d (for progress tracking)"), TotalExpectedFrames);
+	UE_LOG(LogTemp, Verbose, TEXT("  -> LearningRate: %.5f | LRDecay: %.5f"), TrainingSettings.LearningRate, TrainingSettings.LearningRateDecay);
+	UE_LOG(LogTemp, Verbose, TEXT("  -> WeightDecay: %.5f | ActionReg: %.4f"), TrainingSettings.WeightDecay, TrainingSettings.ActionRegularizationWeight);
 
 	// Configure Process Path Settings (use defaults)
 	FLearningAgentsTrainerProcessSettings PathSettings;
@@ -540,11 +540,11 @@ void ATankLearningAgentsManager::StartTraining()
 
 	// Begin training using recorded demonstrations with proper settings
 	ImitationTrainer->BeginTraining(Recording, ImitationTrainerSettings, TrainingSettings, PathSettings);
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Started training from recorded demonstrations."));
-	UE_LOG(LogTemp, Warning, TEXT("  -> Iterations: %d"), TrainingSettings.NumberOfIterations);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Learning Rate: %.6f"), TrainingSettings.LearningRate);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Batch Size: %d"), TrainingSettings.BatchSize);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Device: %s"), TrainingSettings.Device == ELearningAgentsTrainingDevice::CPU ? TEXT("CPU") : TEXT("GPU"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Started training from recorded demonstrations."));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Iterations: %d"), TrainingSettings.NumberOfIterations);
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Learning Rate: %.6f"), TrainingSettings.LearningRate);
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Batch Size: %d"), TrainingSettings.BatchSize);
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Device: %s"), TrainingSettings.Device == ELearningAgentsTrainingDevice::CPU ? TEXT("CPU") : TEXT("GPU"));
 }
 
 void ATankLearningAgentsManager::StopTraining()
@@ -557,7 +557,7 @@ void ATankLearningAgentsManager::StopTraining()
 
 	if (!IsTraining())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Not currently training!"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Not currently training!"));
 		return;
 	}
 
@@ -565,24 +565,24 @@ void ATankLearningAgentsManager::StopTraining()
 	ImitationTrainer->EndTraining();
 
 	// Log training summary
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: TRAINING COMPLETE"));
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> Final iteration: %d/%d"), CurrentIteration, TotalIterations);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Training progress: %.1f%%"), GetTrainingProgress() * 100.0f);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Recorded experiences used: %d frames"), RecordedExperiencesCount);
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: TRAINING COMPLETE"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Final iteration: %d/%d"), CurrentIteration, TotalIterations);
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Training progress: %.1f%%"), GetTrainingProgress() * 100.0f);
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Recorded experiences used: %d frames"), RecordedExperiencesCount);
 
 	// Automatically save trained policy
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Auto-saving trained policy..."));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Auto-saving trained policy..."));
 	SavePolicy();
 
 	// Automatically enable inference mode after training completes
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Enabling inference mode for AI tank..."));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Enabling inference mode for AI tank..."));
 	EnableInferenceMode();
 
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: AI tank is now ready for testing!"));
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: AI tank is now ready for testing!"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 }
 
 bool ATankLearningAgentsManager::IsRecording() const
@@ -637,7 +637,7 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 		// 6. Log progress every 60 frames (1 second at 60 fps)
 		if (RecordedExperiencesCount % 60 == 0)
 		{
-			UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Recording in progress... %d frames recorded"), RecordedExperiencesCount);
+			UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Recording in progress... %d frames recorded"), RecordedExperiencesCount);
 		}
 
 		// 6. Waypoint-based path following: Check waypoint completion
@@ -666,7 +666,7 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 						CurrentTargetLocation
 					) / 100.0f;
 
-					UE_LOG(LogTemp, Log, TEXT("TARGET CHECK: Distance=%.2fm | ReachRadius=%.2fm | WaypointsCompleted=%s"),
+					UE_LOG(LogTemp, Verbose, TEXT("TARGET CHECK: Distance=%.2fm | ReachRadius=%.2fm | WaypointsCompleted=%s"),
 						CurrentDistance,
 						TargetReachRadius / 100.0f,
 						bWaypointsCompleted ? TEXT("YES") : TEXT("NO"));
@@ -676,10 +676,10 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 			if (bWaypointsCompleted && IsTargetReached())
 			{
 				// CRITICAL LOG: Target reached
-				UE_LOG(LogTemp, Warning, TEXT("========================================"));
-				UE_LOG(LogTemp, Warning, TEXT(">>> TARGET REACHED! <<<"));
-				UE_LOG(LogTemp, Warning, TEXT("  Calling OnTargetReached()..."));
-				UE_LOG(LogTemp, Warning, TEXT("========================================"));
+				UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+				UE_LOG(LogTemp, Verbose, TEXT(">>> TARGET REACHED! <<<"));
+				UE_LOG(LogTemp, Verbose, TEXT("  Calling OnTargetReached()..."));
+				UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 
 				OnTargetReached();
 			}
@@ -701,31 +701,31 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 			// Note: Actual training iterations run in Python subprocess
 			// CurrentIteration here is frame count, not training iterations
 			// The Python process logs actual iteration progress
-			UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Training in progress... (frame %d)"), CurrentIteration);
+			UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Training in progress... (frame %d)"), CurrentIteration);
 		}
 	}
 	else if (ImitationTrainer && CurrentIteration > 0 && !ImitationTrainer->IsTraining())
 	{
 		// Training just finished (was running, now stopped)
 		// This happens when Python subprocess completes all iterations
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
-		UE_LOG(LogTemp, Warning, TEXT("TRAINING COMPLETED BY PYTHON SUBPROCESS"));
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
-		UE_LOG(LogTemp, Warning, TEXT("  → UE frames during training: %d"), CurrentIteration);
-		UE_LOG(LogTemp, Warning, TEXT("  → Auto-saving policy..."));
+		UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+		UE_LOG(LogTemp, Verbose, TEXT("TRAINING COMPLETED BY PYTHON SUBPROCESS"));
+		UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+		UE_LOG(LogTemp, Verbose, TEXT("  → UE frames during training: %d"), CurrentIteration);
+		UE_LOG(LogTemp, Verbose, TEXT("  → Auto-saving policy..."));
 
 		// Auto-save and enable inference
 		SavePolicy();
 
-		UE_LOG(LogTemp, Warning, TEXT("  → Enabling inference mode..."));
+		UE_LOG(LogTemp, Verbose, TEXT("  → Enabling inference mode..."));
 		EnableInferenceMode();
 
 		// Reset frame counter to prevent re-triggering
 		CurrentIteration = 0;
 
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
-		UE_LOG(LogTemp, Warning, TEXT("AI TANK IS NOW READY FOR TESTING!"));
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
+		UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+		UE_LOG(LogTemp, Verbose, TEXT("AI TANK IS NOW READY FOR TESTING!"));
+		UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 	}
 
 	// Inference loop - run AI policy if agent is registered and not training
@@ -757,7 +757,7 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 				// Just check if target reached - but ONLY generate new patrol target if NOT in combat mode
 				if (WaypointComp->IsTargetReached() && !bInCombatMode)
 				{
-					UE_LOG(LogTemp, Warning, TEXT("AI INFERENCE: Target reached! Generating new target..."));
+					UE_LOG(LogTemp, Verbose, TEXT("AI INFERENCE: Target reached! Generating new target..."));
 
 					// Generate new target using AI tank as origin
 					AWR_Tank_Pawn* OriginalTrainer = TrainerTank;
@@ -769,7 +769,7 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 
 					if (bHasActiveTarget)
 					{
-						UE_LOG(LogTemp, Warning, TEXT("AI INFERENCE: New target at %s"), *CurrentTargetLocation.ToString());
+						UE_LOG(LogTemp, Verbose, TEXT("AI INFERENCE: New target at %s"), *CurrentTargetLocation.ToString());
 					}
 				}
 			}
@@ -781,7 +781,7 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 
 				if (DistanceToTarget <= TargetReachRadius)
 				{
-					UE_LOG(LogTemp, Warning, TEXT("AI INFERENCE: Target reached! Generating new target..."));
+					UE_LOG(LogTemp, Verbose, TEXT("AI INFERENCE: Target reached! Generating new target..."));
 
 					AWR_Tank_Pawn* OriginalTrainer = TrainerTank;
 					TrainerTank = AgentTank;
@@ -961,7 +961,7 @@ void ATankLearningAgentsManager::Tick(float DeltaTime)
 
 void ATankLearningAgentsManager::RegisterTrainerTank(AWR_Tank_Pawn* Tank)
 {
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager::RegisterTrainerTank: Called"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::RegisterTrainerTank: Called"));
 
 	if (!Tank)
 	{
@@ -969,18 +969,18 @@ void ATankLearningAgentsManager::RegisterTrainerTank(AWR_Tank_Pawn* Tank)
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("  -> Tank: %s (Class: %s)"), *Tank->GetName(), *Tank->GetClass()->GetName());
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Tank: %s (Class: %s)"), *Tank->GetName(), *Tank->GetClass()->GetName());
 
 	// Store reference
 	TrainerTank = Tank;
 
 	// Register as agent
-	UE_LOG(LogTemp, Log, TEXT("  -> Calling AddTankAgent for Trainer tank..."));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Calling AddTankAgent for Trainer tank..."));
 	TrainerAgentId = AddTankAgent(Tank);
 
 	if (TrainerAgentId != INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Trainer tank registered successfully (AgentId: %d, Tank: %s)"),
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Trainer tank registered successfully (AgentId: %d, Tank: %s)"),
 			TrainerAgentId, *Tank->GetName());
 	}
 	else
@@ -991,7 +991,7 @@ void ATankLearningAgentsManager::RegisterTrainerTank(AWR_Tank_Pawn* Tank)
 
 void ATankLearningAgentsManager::RegisterAgentTank(AWR_Tank_Pawn* Tank)
 {
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager::RegisterAgentTank: Called"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::RegisterAgentTank: Called"));
 
 	if (!Tank)
 	{
@@ -999,18 +999,18 @@ void ATankLearningAgentsManager::RegisterAgentTank(AWR_Tank_Pawn* Tank)
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("  -> Tank: %s (Class: %s)"), *Tank->GetName(), *Tank->GetClass()->GetName());
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Tank: %s (Class: %s)"), *Tank->GetName(), *Tank->GetClass()->GetName());
 
 	// Store reference
 	AgentTank = Tank;
 
 	// Register as agent
-	UE_LOG(LogTemp, Log, TEXT("  -> Calling AddTankAgent for Agent tank..."));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Calling AddTankAgent for Agent tank..."));
 	AgentAgentId = AddTankAgent(Tank);
 
 	if (AgentAgentId != INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Agent tank registered successfully (AgentId: %d, Tank: %s)"),
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Agent tank registered successfully (AgentId: %d, Tank: %s)"),
 			AgentAgentId, *Tank->GetName());
 	}
 	else
@@ -1021,7 +1021,7 @@ void ATankLearningAgentsManager::RegisterAgentTank(AWR_Tank_Pawn* Tank)
 
 void ATankLearningAgentsManager::SetAgentTank(AWR_Tank_Pawn* Tank)
 {
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager::SetAgentTank: Setting agent tank reference"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::SetAgentTank: Setting agent tank reference"));
 
 	if (!Tank)
 	{
@@ -1029,21 +1029,21 @@ void ATankLearningAgentsManager::SetAgentTank(AWR_Tank_Pawn* Tank)
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("  -> Tank: %s (Class: %s)"), *Tank->GetName(), *Tank->GetClass()->GetName());
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Tank: %s (Class: %s)"), *Tank->GetName(), *Tank->GetClass()->GetName());
 
 	// Store reference WITHOUT registering as agent
 	// This allows EnableInferenceMode() to register it later
 	AgentTank = Tank;
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Agent tank reference stored (NOT registered yet)"));
-	UE_LOG(LogTemp, Log, TEXT("  → Tank will be registered when EnableInferenceMode() is called"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Agent tank reference stored (NOT registered yet)"));
+	UE_LOG(LogTemp, Verbose, TEXT("  → Tank will be registered when EnableInferenceMode() is called"));
 }
 
 void ATankLearningAgentsManager::EnableInferenceMode()
 {
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager::EnableInferenceMode"));
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::EnableInferenceMode"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 
 	// Check if AI tank is available
 	if (!AgentTank)
@@ -1057,15 +1057,15 @@ void ATankLearningAgentsManager::EnableInferenceMode()
 	// Check if already registered
 	if (AgentAgentId != INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("EnableInferenceMode: Agent tank already registered (AgentId: %d)"), AgentAgentId);
-		UE_LOG(LogTemp, Warning, TEXT("  → Inference already active, skipping re-registration"));
+		UE_LOG(LogTemp, Verbose, TEXT("EnableInferenceMode: Agent tank already registered (AgentId: %d)"), AgentAgentId);
+		UE_LOG(LogTemp, Verbose, TEXT("  → Inference already active, skipping re-registration"));
 		return;
 	}
 
 	// ========================================================================
 	// STEP 1: Load saved policy from disk
 	// ========================================================================
-	UE_LOG(LogTemp, Warning, TEXT("STEP 1: Loading trained policy from disk..."));
+	UE_LOG(LogTemp, Verbose, TEXT("STEP 1: Loading trained policy from disk..."));
 	LoadPolicy();
 
 	// ========================================================================
@@ -1075,7 +1075,7 @@ void ATankLearningAgentsManager::EnableInferenceMode()
 	// which cannot receive AI actions. This causes "Failed to get AIController" spam.
 	if (TrainerAgentId != INDEX_NONE && Manager)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("STEP 2: Unregistering Trainer Tank (AgentId: %d) to prevent inference conflicts..."), TrainerAgentId);
+		UE_LOG(LogTemp, Verbose, TEXT("STEP 2: Unregistering Trainer Tank (AgentId: %d) to prevent inference conflicts..."), TrainerAgentId);
 		Manager->RemoveAgent(TrainerAgentId);
 		TrainerAgentId = INDEX_NONE;
 	}
@@ -1083,10 +1083,10 @@ void ATankLearningAgentsManager::EnableInferenceMode()
 	// ========================================================================
 	// STEP 3: Register AI tank for inference
 	// ========================================================================
-	UE_LOG(LogTemp, Warning, TEXT("STEP 3: Registering AI tank for inference..."));
+	UE_LOG(LogTemp, Verbose, TEXT("STEP 3: Registering AI tank for inference..."));
 	RegisterAgentTank(AgentTank);
 
-	UE_LOG(LogTemp, Warning, TEXT("  → AI tank registered successfully (AgentId: %d)"), AgentAgentId);
+	UE_LOG(LogTemp, Verbose, TEXT("  → AI tank registered successfully (AgentId: %d)"), AgentAgentId);
 
 	// ========================================================================
 	// STEP 4: Generate target and waypoints for AI inference
@@ -1094,7 +1094,7 @@ void ATankLearningAgentsManager::EnableInferenceMode()
 	// Without this, the AI receives zero vectors for waypoint observations
 	if (bUseTargetBasedRecording)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("STEP 4: Generating initial target and waypoints for AI..."));
+		UE_LOG(LogTemp, Verbose, TEXT("STEP 4: Generating initial target and waypoints for AI..."));
 
 		// Temporarily set TrainerTank to AgentTank for target generation
 		// (GenerateNewTarget uses TrainerTank as origin)
@@ -1108,8 +1108,8 @@ void ATankLearningAgentsManager::EnableInferenceMode()
 
 		if (bHasActiveTarget)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("  → Target: %s"), *CurrentTargetLocation.ToString());
-			UE_LOG(LogTemp, Warning, TEXT("  → Waypoints: %d"), CurrentWaypoints.Num());
+			UE_LOG(LogTemp, Verbose, TEXT("  → Target: %s"), *CurrentTargetLocation.ToString());
+			UE_LOG(LogTemp, Verbose, TEXT("  → Waypoints: %d"), CurrentWaypoints.Num());
 		}
 		else
 		{
@@ -1127,13 +1127,13 @@ void ATankLearningAgentsManager::EnableInferenceMode()
 		if (UEnemyDetectionComponent* DetectionComp = AIController->GetEnemyDetectionComponent())
 		{
 			DetectionComp->SetDetectionEnabled(true);
-			UE_LOG(LogTemp, Warning, TEXT("STEP 5: Enemy detection ENABLED on AI controller"));
+			UE_LOG(LogTemp, Verbose, TEXT("STEP 5: Enemy detection ENABLED on AI controller"));
 		}
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("INFERENCE MODE ACTIVE - AI is now driving!"));
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("INFERENCE MODE ACTIVE - AI is now driving!"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 }
 
 // ========== TRAINING METRICS IMPLEMENTATION ==========
@@ -1188,10 +1188,10 @@ void ATankLearningAgentsManager::SavePolicy()
 	if (!FPaths::DirectoryExists(DirectoryPath))
 	{
 		FPlatformFileManager::Get().GetPlatformFile().CreateDirectoryTree(*DirectoryPath);
-		UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Created policy directory: %s"), *DirectoryPath);
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Created policy directory: %s"), *DirectoryPath);
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Saving trained policy..."));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Saving trained policy..."));
 
 	// Save all three neural network components
 	int32 SavedCount = 0;
@@ -1203,7 +1203,7 @@ void ATankLearningAgentsManager::SavePolicy()
 		FFilePath EncoderPath;
 		EncoderPath.FilePath = BasePath + TEXT("_encoder.bin");
 		EncoderNetwork->SaveNetworkToSnapshot(EncoderPath);
-		UE_LOG(LogTemp, Log, TEXT("  -> Encoder saved: %s"), *EncoderPath.FilePath);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Encoder saved: %s"), *EncoderPath.FilePath);
 		SavedCount++;
 	}
 
@@ -1214,7 +1214,7 @@ void ATankLearningAgentsManager::SavePolicy()
 		FFilePath PolicyPath;
 		PolicyPath.FilePath = BasePath + TEXT("_policy.bin");
 		PolicyNetwork->SaveNetworkToSnapshot(PolicyPath);
-		UE_LOG(LogTemp, Log, TEXT("  -> Policy saved: %s"), *PolicyPath.FilePath);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Policy saved: %s"), *PolicyPath.FilePath);
 		SavedCount++;
 	}
 
@@ -1225,13 +1225,13 @@ void ATankLearningAgentsManager::SavePolicy()
 		FFilePath DecoderPath;
 		DecoderPath.FilePath = BasePath + TEXT("_decoder.bin");
 		DecoderNetwork->SaveNetworkToSnapshot(DecoderPath);
-		UE_LOG(LogTemp, Log, TEXT("  -> Decoder saved: %s"), *DecoderPath.FilePath);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Decoder saved: %s"), *DecoderPath.FilePath);
 		SavedCount++;
 	}
 
 	if (SavedCount == 3)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Policy saved successfully! (%d/3 networks)"), SavedCount);
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Policy saved successfully! (%d/3 networks)"), SavedCount);
 	}
 	else
 	{
@@ -1254,12 +1254,12 @@ void ATankLearningAgentsManager::LoadPolicy()
 	FString PolicyFilePath = BasePath + TEXT("_policy.bin");
 	if (!FPaths::FileExists(PolicyFilePath))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Policy file not found: %s"), *PolicyFilePath);
-		UE_LOG(LogTemp, Warning, TEXT("  -> Train and save a policy first before loading"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Policy file not found: %s"), *PolicyFilePath);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Train and save a policy first before loading"));
 		return;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Loading trained policy..."));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Loading trained policy..."));
 
 	int32 LoadedCount = 0;
 
@@ -1271,12 +1271,12 @@ void ATankLearningAgentsManager::LoadPolicy()
 		FFilePath EncoderPath;
 		EncoderPath.FilePath = EncoderFilePath;
 		EncoderNetwork->LoadNetworkFromSnapshot(EncoderPath);
-		UE_LOG(LogTemp, Log, TEXT("  -> Encoder loaded: %s"), *EncoderPath.FilePath);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Encoder loaded: %s"), *EncoderPath.FilePath);
 		LoadedCount++;
 	}
 	else if (!FPaths::FileExists(EncoderFilePath))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("  -> Encoder file not found: %s"), *EncoderFilePath);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Encoder file not found: %s"), *EncoderFilePath);
 	}
 
 	// Load Policy Network (main network)
@@ -1286,7 +1286,7 @@ void ATankLearningAgentsManager::LoadPolicy()
 		FFilePath PolicyPath;
 		PolicyPath.FilePath = PolicyFilePath;
 		PolicyNetwork->LoadNetworkFromSnapshot(PolicyPath);
-		UE_LOG(LogTemp, Log, TEXT("  -> Policy loaded: %s"), *PolicyPath.FilePath);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Policy loaded: %s"), *PolicyPath.FilePath);
 		LoadedCount++;
 	}
 
@@ -1298,21 +1298,21 @@ void ATankLearningAgentsManager::LoadPolicy()
 		FFilePath DecoderPath;
 		DecoderPath.FilePath = DecoderFilePath;
 		DecoderNetwork->LoadNetworkFromSnapshot(DecoderPath);
-		UE_LOG(LogTemp, Log, TEXT("  -> Decoder loaded: %s"), *DecoderPath.FilePath);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Decoder loaded: %s"), *DecoderPath.FilePath);
 		LoadedCount++;
 	}
 	else if (!FPaths::FileExists(DecoderFilePath))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("  -> Decoder file not found: %s"), *DecoderFilePath);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Decoder file not found: %s"), *DecoderFilePath);
 	}
 
 	if (LoadedCount == 3)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Policy loaded successfully! (%d/3 networks)"), LoadedCount);
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Policy loaded successfully! (%d/3 networks)"), LoadedCount);
 	}
 	else if (LoadedCount > 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager: Policy partially loaded (%d/3 networks)"), LoadedCount);
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Policy partially loaded (%d/3 networks)"), LoadedCount);
 	}
 	else
 	{
@@ -1338,7 +1338,7 @@ void ATankLearningAgentsManager::SavePolicyCheckpoint(const FString& CheckpointN
 		FPlatformFileManager::Get().GetPlatformFile().CreateDirectoryTree(*DirectoryPath);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Saving checkpoint: %s"), *CheckpointName);
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Saving checkpoint: %s"), *CheckpointName);
 
 	int32 SavedCount = 0;
 
@@ -1372,7 +1372,7 @@ void ATankLearningAgentsManager::SavePolicyCheckpoint(const FString& CheckpointN
 		SavedCount++;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("  -> Checkpoint saved (%d/3 networks) to: %s"), SavedCount, *DirectoryPath);
+	UE_LOG(LogTemp, Verbose, TEXT("  -> Checkpoint saved (%d/3 networks) to: %s"), SavedCount, *DirectoryPath);
 }
 
 // ========== TARGET-BASED RECORDING SYSTEM IMPLEMENTATION ==========
@@ -1381,7 +1381,7 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 {
 	if (!bUseTargetBasedRecording)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager::GenerateNewTarget: Target-based recording is disabled!"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::GenerateNewTarget: Target-based recording is disabled!"));
 		return;
 	}
 
@@ -1408,7 +1408,7 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager::GenerateNewTarget: Trainer tank is null, using world origin"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::GenerateNewTarget: Trainer tank is null, using world origin"));
 	}
 
 	// ========================================================================
@@ -1430,7 +1430,7 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 		if (Retry > 0 && Retry % 5 == 0)
 		{
 			CurrentMaxDistance = FMath::Max(CurrentMinDistance * 1.5f, CurrentMaxDistance * 0.7f);
-			UE_LOG(LogTemp, Log, TEXT("GenerateNewTarget: Reducing search distance to %.0f-%.0f cm"),
+			UE_LOG(LogTemp, Verbose, TEXT("GenerateNewTarget: Reducing search distance to %.0f-%.0f cm"),
 				CurrentMinDistance, CurrentMaxDistance);
 		}
 
@@ -1457,7 +1457,7 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 
 		if (!bFoundLocation && Retry < MaxRetries - 1)
 		{
-			UE_LOG(LogTemp, Log, TEXT("GenerateNewTarget: Retry %d/%d - NavMesh projection failed (search radius: %.0f)"),
+			UE_LOG(LogTemp, Verbose, TEXT("GenerateNewTarget: Retry %d/%d - NavMesh projection failed (search radius: %.0f)"),
 				Retry + 1, MaxRetries, SearchRadius);
 		}
 	}
@@ -1477,13 +1477,13 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 		// CRITICAL LOG: Target generation
 		const float DistanceFromTrainer = TrainerTank ?
 			FVector::Dist(OriginLocation, CurrentTargetLocation) / 100.0f : 0.0f;
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
-		UE_LOG(LogTemp, Warning, TEXT("GENERATE NEW TARGET #%d"), TargetSegments.Num() + 1);
-		UE_LOG(LogTemp, Warning, TEXT("  Target Location: %s"), *CurrentTargetLocation.ToString());
-		UE_LOG(LogTemp, Warning, TEXT("  Distance from Trainer: %.2fm"), DistanceFromTrainer);
-		UE_LOG(LogTemp, Warning, TEXT("  Reach Radius: %.2fm"), TargetReachRadius / 100.0f);
-		UE_LOG(LogTemp, Warning, TEXT("  Experience Index: %d"), RecordedExperiencesCount);
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
+		UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+		UE_LOG(LogTemp, Verbose, TEXT("GENERATE NEW TARGET #%d"), TargetSegments.Num() + 1);
+		UE_LOG(LogTemp, Verbose, TEXT("  Target Location: %s"), *CurrentTargetLocation.ToString());
+		UE_LOG(LogTemp, Verbose, TEXT("  Distance from Trainer: %.2fm"), DistanceFromTrainer);
+		UE_LOG(LogTemp, Verbose, TEXT("  Reach Radius: %.2fm"), TargetReachRadius / 100.0f);
+		UE_LOG(LogTemp, Verbose, TEXT("  Experience Index: %d"), RecordedExperiencesCount);
+		UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 
 		// Set target on trainer's WaypointComponent (it handles pathfinding internally)
 		if (bUseWaypointPathFollowing && TrainerTank)
@@ -1513,8 +1513,8 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 		// ========================================================================
 		// IMPROVED FALLBACK (v4.0): Try to find ANY valid NavMesh point nearby
 		// ========================================================================
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager::GenerateNewTarget: Random NavMesh projection failed after %d retries"), MaxRetries);
-		UE_LOG(LogTemp, Warning, TEXT("  -> Attempting SMART FALLBACK: searching for nearest NavMesh point..."));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::GenerateNewTarget: Random NavMesh projection failed after %d retries"), MaxRetries);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Attempting SMART FALLBACK: searching for nearest NavMesh point..."));
 
 		// SMART FALLBACK: Try to find ANY valid NavMesh point in a large radius around trainer
 		bool bFoundFallback = false;
@@ -1542,7 +1542,7 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 			if (bFoundFallback)
 			{
 				CurrentTargetLocation = NavLocation.Location;
-				UE_LOG(LogTemp, Warning, TEXT("  -> SMART FALLBACK SUCCESS: Found NavMesh point at direction %d"), Direction);
+				UE_LOG(LogTemp, Verbose, TEXT("  -> SMART FALLBACK SUCCESS: Found NavMesh point at direction %d"), Direction);
 			}
 		}
 
@@ -1566,14 +1566,14 @@ void ATankLearningAgentsManager::GenerateNewTarget()
 		// CRITICAL LOG: Target generation (fallback)
 		const float DistanceFromTrainer = TrainerTank ?
 			FVector::Dist(OriginLocation, CurrentTargetLocation) / 100.0f : 0.0f;
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
-		UE_LOG(LogTemp, Warning, TEXT("GENERATE NEW TARGET #%d (%s)"), TargetSegments.Num() + 1,
+		UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+		UE_LOG(LogTemp, Verbose, TEXT("GENERATE NEW TARGET #%d (%s)"), TargetSegments.Num() + 1,
 			bFoundFallback ? TEXT("SMART FALLBACK") : TEXT("DIRECT FALLBACK"));
-		UE_LOG(LogTemp, Warning, TEXT("  Target Location: %s"), *CurrentTargetLocation.ToString());
-		UE_LOG(LogTemp, Warning, TEXT("  Distance from Trainer: %.2fm"), DistanceFromTrainer);
-		UE_LOG(LogTemp, Warning, TEXT("  Reach Radius: %.2fm"), TargetReachRadius / 100.0f);
-		UE_LOG(LogTemp, Warning, TEXT("  Experience Index: %d"), RecordedExperiencesCount);
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
+		UE_LOG(LogTemp, Verbose, TEXT("  Target Location: %s"), *CurrentTargetLocation.ToString());
+		UE_LOG(LogTemp, Verbose, TEXT("  Distance from Trainer: %.2fm"), DistanceFromTrainer);
+		UE_LOG(LogTemp, Verbose, TEXT("  Reach Radius: %.2fm"), TargetReachRadius / 100.0f);
+		UE_LOG(LogTemp, Verbose, TEXT("  Experience Index: %d"), RecordedExperiencesCount);
+		UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 
 		// Set target on trainer's WaypointComponent (it handles pathfinding internally)
 		if (bUseWaypointPathFollowing && TrainerTank)
@@ -1617,7 +1617,7 @@ void ATankLearningAgentsManager::OnTargetReached()
 {
 	if (!bHasActiveTarget)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager::OnTargetReached: No active target!"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::OnTargetReached: No active target!"));
 		return;
 	}
 
@@ -1639,28 +1639,28 @@ void ATankLearningAgentsManager::OnTargetReached()
 	}
 
 	// CRITICAL LOG: Target completion
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("TARGET #%d COMPLETED!"), TargetSegments.Num() + 1);
-	UE_LOG(LogTemp, Warning, TEXT("  Duration: %.2f seconds"), SegmentDuration);
-	UE_LOG(LogTemp, Warning, TEXT("  Experiences: %d frames"), SegmentExperiences);
-	UE_LOG(LogTemp, Warning, TEXT("  Experience Range: [%d - %d]"),
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("TARGET #%d COMPLETED!"), TargetSegments.Num() + 1);
+	UE_LOG(LogTemp, Verbose, TEXT("  Duration: %.2f seconds"), SegmentDuration);
+	UE_LOG(LogTemp, Verbose, TEXT("  Experiences: %d frames"), SegmentExperiences);
+	UE_LOG(LogTemp, Verbose, TEXT("  Experience Range: [%d - %d]"),
 		CurrentSegment.StartExperienceIndex,
 		CurrentSegment.EndExperienceIndex);
 
 	if (bUseWaypointPathFollowing)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("  Waypoints Completed: %d/%d"),
+		UE_LOG(LogTemp, Verbose, TEXT("  Waypoints Completed: %d/%d"),
 			CurrentWaypointIndex, CurrentWaypoints.Num());
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("  Total Completed Targets: %d"), TargetSegments.Num() + 1);
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("  Total Completed Targets: %d"), TargetSegments.Num() + 1);
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 
 	// Add to completed segments list
 	TargetSegments.Add(CurrentSegment);
 
 	// Generate new target (will create new CurrentSegment)
-	UE_LOG(LogTemp, Warning, TEXT("Generating next target..."));
+	UE_LOG(LogTemp, Verbose, TEXT("Generating next target..."));
 	GenerateNewTarget();
 }
 
@@ -1683,7 +1683,7 @@ void ATankLearningAgentsManager::CreateTargetVisualization()
 	// This is more lightweight and doesn't require mesh assets
 	// We'll draw it in Tick() method
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager: Target visualization enabled (debug sphere)"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager: Target visualization enabled (debug sphere)"));
 }
 
 void ATankLearningAgentsManager::UpdateTargetVisualization()
@@ -1720,7 +1720,7 @@ void ATankLearningAgentsManager::GenerateWaypointsToTarget()
 {
 	if (!bUseWaypointPathFollowing || !bUseTargetBasedRecording)
 	{
-		UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsManager::GenerateWaypointsToTarget: Waypoint system disabled"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::GenerateWaypointsToTarget: Waypoint system disabled"));
 		return;
 	}
 
@@ -1759,10 +1759,10 @@ void ATankLearningAgentsManager::GenerateWaypointsToTarget()
 	if (bEndProjected) EndLocation = EndProj.Location;
 
 	// DEBUG LOG: NavMesh projection
-	UE_LOG(LogTemp, Warning, TEXT("========== WAYPOINT PATHFINDING (v2) =========="));
-	UE_LOG(LogTemp, Warning, TEXT("  Start: %s (Projected: %s)"), *StartLocation.ToString(), bStartProjected ? TEXT("YES") : TEXT("NO"));
-	UE_LOG(LogTemp, Warning, TEXT("  End: %s (Projected: %s)"), *EndLocation.ToString(), bEndProjected ? TEXT("YES") : TEXT("NO"));
-	UE_LOG(LogTemp, Warning, TEXT("  Distance: %.2fm"), FVector::Dist(StartLocation, EndLocation) / 100.0f);
+	UE_LOG(LogTemp, Verbose, TEXT("========== WAYPOINT PATHFINDING (v2) =========="));
+	UE_LOG(LogTemp, Verbose, TEXT("  Start: %s (Projected: %s)"), *StartLocation.ToString(), bStartProjected ? TEXT("YES") : TEXT("NO"));
+	UE_LOG(LogTemp, Verbose, TEXT("  End: %s (Projected: %s)"), *EndLocation.ToString(), bEndProjected ? TEXT("YES") : TEXT("NO"));
+	UE_LOG(LogTemp, Verbose, TEXT("  Distance: %.2fm"), FVector::Dist(StartLocation, EndLocation) / 100.0f);
 
 	// Find navigation path using UE 5.6 Recast API
 	UNavigationPath* Path = UNavigationSystemV1::FindPathToLocationSynchronously(
@@ -1785,7 +1785,7 @@ void ATankLearningAgentsManager::GenerateWaypointsToTarget()
 		// Log if path is partial (for debugging, but still use it)
 		if (Path->IsPartial())
 		{
-			UE_LOG(LogTemp, Warning, TEXT("  NOTE: Path is PARTIAL - using available waypoints anyway"));
+			UE_LOG(LogTemp, Verbose, TEXT("  NOTE: Path is PARTIAL - using available waypoints anyway"));
 		}
 
 		// CRITICAL: Include ALL points from NavMesh pathfinding result
@@ -1802,7 +1802,7 @@ void ATankLearningAgentsManager::GenerateWaypointsToTarget()
 			if (DistToTarget > 50.0f)  // Only add if not already close to target
 			{
 				CurrentWaypoints.Add(EndLocation);
-				UE_LOG(LogTemp, Warning, TEXT("  Added final target as last waypoint (partial path)"));
+				UE_LOG(LogTemp, Verbose, TEXT("  Added final target as last waypoint (partial path)"));
 			}
 		}
 
@@ -1810,21 +1810,21 @@ void ATankLearningAgentsManager::GenerateWaypointsToTarget()
 		CurrentWaypointIndex = 0;
 
 		// CRITICAL LOG: Waypoint generation
-		UE_LOG(LogTemp, Warning, TEXT("GENERATE WAYPOINTS TO TARGET"));
-		UE_LOG(LogTemp, Warning, TEXT("  Total Waypoints: %d (%s path)"), CurrentWaypoints.Num(),
+		UE_LOG(LogTemp, Verbose, TEXT("GENERATE WAYPOINTS TO TARGET"));
+		UE_LOG(LogTemp, Verbose, TEXT("  Total Waypoints: %d (%s path)"), CurrentWaypoints.Num(),
 			Path->IsPartial() ? TEXT("partial") : TEXT("complete"));
-		UE_LOG(LogTemp, Warning, TEXT("  Start Location: %s"), *StartLocation.ToString());
-		UE_LOG(LogTemp, Warning, TEXT("  Target Location: %s"), *EndLocation.ToString());
+		UE_LOG(LogTemp, Verbose, TEXT("  Start Location: %s"), *StartLocation.ToString());
+		UE_LOG(LogTemp, Verbose, TEXT("  Target Location: %s"), *EndLocation.ToString());
 
 		if (CurrentWaypoints.Num() > 0)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("  First Waypoint [0]: %s"), *CurrentWaypoints[0].ToString());
-			UE_LOG(LogTemp, Warning, TEXT("  Last Waypoint [%d]: %s"),
+			UE_LOG(LogTemp, Verbose, TEXT("  First Waypoint [0]: %s"), *CurrentWaypoints[0].ToString());
+			UE_LOG(LogTemp, Verbose, TEXT("  Last Waypoint [%d]: %s"),
 				CurrentWaypoints.Num() - 1, *CurrentWaypoints.Last().ToString());
 
 			// Check if last waypoint matches target
 			const float LastWpToTargetDist = FVector::Dist(CurrentWaypoints.Last(), EndLocation);
-			UE_LOG(LogTemp, Warning, TEXT("  Distance: Last WP to Target = %.2fm"), LastWpToTargetDist / 100.0f);
+			UE_LOG(LogTemp, Verbose, TEXT("  Distance: Last WP to Target = %.2fm"), LastWpToTargetDist / 100.0f);
 		}
 
 		// Log all waypoint positions with distances
@@ -1832,32 +1832,32 @@ void ATankLearningAgentsManager::GenerateWaypointsToTarget()
 		{
 			const float DistanceToNext = (i < CurrentWaypoints.Num() - 1) ?
 				FVector::Dist(CurrentWaypoints[i], CurrentWaypoints[i + 1]) / 100.0f : 0.0f;
-			UE_LOG(LogTemp, Log, TEXT("  WP[%d]: %s (%.2fm to next)"),
+			UE_LOG(LogTemp, Verbose, TEXT("  WP[%d]: %s (%.2fm to next)"),
 				i, *CurrentWaypoints[i].ToString(), DistanceToNext);
 		}
-		UE_LOG(LogTemp, Warning, TEXT("========== WAYPOINTS GENERATED SUCCESS =========="));
+		UE_LOG(LogTemp, Verbose, TEXT("========== WAYPOINTS GENERATED SUCCESS =========="));
 	}
 	else
 	{
 		// DEBUG: Log why pathfinding failed
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsManager::GenerateWaypointsToTarget: Failed to find path!"));
-		UE_LOG(LogTemp, Warning, TEXT("  Path: %s"), Path ? TEXT("Valid") : TEXT("NULL"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsManager::GenerateWaypointsToTarget: Failed to find path!"));
+		UE_LOG(LogTemp, Verbose, TEXT("  Path: %s"), Path ? TEXT("Valid") : TEXT("NULL"));
 		if (Path)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("  Path->IsValid(): %s"), Path->IsValid() ? TEXT("YES") : TEXT("NO"));
-			UE_LOG(LogTemp, Warning, TEXT("  Path->IsPartial(): %s"), Path->IsPartial() ? TEXT("YES") : TEXT("NO"));
-			UE_LOG(LogTemp, Warning, TEXT("  Path Points: %d"), Path->PathPoints.Num());
+			UE_LOG(LogTemp, Verbose, TEXT("  Path->IsValid(): %s"), Path->IsValid() ? TEXT("YES") : TEXT("NO"));
+			UE_LOG(LogTemp, Verbose, TEXT("  Path->IsPartial(): %s"), Path->IsPartial() ? TEXT("YES") : TEXT("NO"));
+			UE_LOG(LogTemp, Verbose, TEXT("  Path Points: %d"), Path->PathPoints.Num());
 		}
 
 		// FALLBACK: Create direct waypoint to target when pathfinding fails
-		UE_LOG(LogTemp, Warning, TEXT("  -> Creating DIRECT path to target (fallback)"));
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Creating DIRECT path to target (fallback)"));
 		CurrentWaypoints.Empty();
 		CurrentWaypoints.Add(StartLocation);  // Current position
 		CurrentWaypoints.Add(EndLocation);    // Target position
 		CurrentWaypointIndex = 0;
 
-		UE_LOG(LogTemp, Warning, TEXT("  -> Fallback waypoints: Start -> Target (2 points)"));
-		UE_LOG(LogTemp, Warning, TEXT("=========================================="));
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Fallback waypoints: Start -> Target (2 points)"));
+		UE_LOG(LogTemp, Verbose, TEXT("=========================================="));
 	}
 }
 
@@ -1891,8 +1891,8 @@ void ATankLearningAgentsManager::AdvanceToNextWaypoint()
 	if (CurrentWaypointIndex < CurrentWaypoints.Num())
 	{
 		// CRITICAL LOG: Waypoint reached
-		UE_LOG(LogTemp, Warning, TEXT(">>> WAYPOINT #%d REACHED! <<<"), CurrentWaypointIndex);
-		UE_LOG(LogTemp, Warning, TEXT("  Waypoint Location: %s"), *CurrentWaypoints[CurrentWaypointIndex].ToString());
+		UE_LOG(LogTemp, Verbose, TEXT(">>> WAYPOINT #%d REACHED! <<<"), CurrentWaypointIndex);
+		UE_LOG(LogTemp, Verbose, TEXT("  Waypoint Location: %s"), *CurrentWaypoints[CurrentWaypointIndex].ToString());
 
 		CurrentWaypointIndex++;
 
@@ -1901,18 +1901,18 @@ void ATankLearningAgentsManager::AdvanceToNextWaypoint()
 			const FVector NextWaypoint = CurrentWaypoints[CurrentWaypointIndex];
 			const float DistanceToNext = TrainerTank ?
 				FVector::Dist(TrainerTank->GetActorLocation(), NextWaypoint) / 100.0f : 0.0f;
-			UE_LOG(LogTemp, Warning, TEXT("  -> Advancing to waypoint #%d (%.2fm away)"),
+			UE_LOG(LogTemp, Verbose, TEXT("  -> Advancing to waypoint #%d (%.2fm away)"),
 				CurrentWaypointIndex, DistanceToNext);
-			UE_LOG(LogTemp, Warning, TEXT("  -> Progress: %d/%d waypoints completed"),
+			UE_LOG(LogTemp, Verbose, TEXT("  -> Progress: %d/%d waypoints completed"),
 				CurrentWaypointIndex, CurrentWaypoints.Num());
 		}
 		else
 		{
 			// CRITICAL: All waypoints completed
-			UE_LOG(LogTemp, Warning, TEXT("========================================"));
-			UE_LOG(LogTemp, Warning, TEXT("ALL WAYPOINTS COMPLETED!"));
-			UE_LOG(LogTemp, Warning, TEXT("  Total Waypoints: %d"), CurrentWaypoints.Num());
-			UE_LOG(LogTemp, Warning, TEXT("  Now heading to FINAL TARGET"));
+			UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+			UE_LOG(LogTemp, Verbose, TEXT("ALL WAYPOINTS COMPLETED!"));
+			UE_LOG(LogTemp, Verbose, TEXT("  Total Waypoints: %d"), CurrentWaypoints.Num());
+			UE_LOG(LogTemp, Verbose, TEXT("  Now heading to FINAL TARGET"));
 
 			if (TrainerTank)
 			{
@@ -1920,10 +1920,10 @@ void ATankLearningAgentsManager::AdvanceToNextWaypoint()
 					TrainerTank->GetActorLocation(),
 					CurrentTargetLocation
 				) / 100.0f;
-				UE_LOG(LogTemp, Warning, TEXT("  Distance to Target: %.2fm"), DistanceToTarget);
-				UE_LOG(LogTemp, Warning, TEXT("  Reach Radius Required: %.2fm"), TargetReachRadius / 100.0f);
+				UE_LOG(LogTemp, Verbose, TEXT("  Distance to Target: %.2fm"), DistanceToTarget);
+				UE_LOG(LogTemp, Verbose, TEXT("  Reach Radius Required: %.2fm"), TargetReachRadius / 100.0f);
 			}
-			UE_LOG(LogTemp, Warning, TEXT("========================================"));
+			UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 		}
 	}
 }
@@ -2026,23 +2026,23 @@ void ATankLearningAgentsManager::ValidateDataDiversity()
 	const float MeanSteering = SteeringSum / TotalFrames;
 
 	// Log distribution
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("DATA DIVERSITY ANALYSIS (v7.0)"));
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("Total Frames: %d"), RecordedExperiencesCount);
-	UE_LOG(LogTemp, Warning, TEXT(""));
-	UE_LOG(LogTemp, Warning, TEXT("THROTTLE DISTRIBUTION:"));
-	UE_LOG(LogTemp, Warning, TEXT("  Forward (>0.1):  %d frames (%.1f%%)"), ForwardFrames, ForwardPct);
-	UE_LOG(LogTemp, Warning, TEXT("  Backward (<-0.1): %d frames (%.1f%%)"), BackwardFrames, BackwardPct);
-	UE_LOG(LogTemp, Warning, TEXT("  Idle (-0.1~0.1): %d frames (%.1f%%)"), IdleFrames, IdlePct);
-	UE_LOG(LogTemp, Warning, TEXT("  Mean Throttle: %.3f"), MeanThrottle);
-	UE_LOG(LogTemp, Warning, TEXT(""));
-	UE_LOG(LogTemp, Warning, TEXT("STEERING DISTRIBUTION:"));
-	UE_LOG(LogTemp, Warning, TEXT("  Left (<-0.1):   %d frames (%.1f%%)"), LeftSteeringFrames, LeftPct);
-	UE_LOG(LogTemp, Warning, TEXT("  Right (>0.1):   %d frames (%.1f%%)"), RightSteeringFrames, RightPct);
-	UE_LOG(LogTemp, Warning, TEXT("  Straight (-0.1~0.1): %d frames (%.1f%%)"), StraightFrames, StraightPct);
-	UE_LOG(LogTemp, Warning, TEXT("  Mean Steering: %.3f"), MeanSteering);
-	UE_LOG(LogTemp, Warning, TEXT(""));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("DATA DIVERSITY ANALYSIS (v7.0)"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("Total Frames: %d"), RecordedExperiencesCount);
+	UE_LOG(LogTemp, Verbose, TEXT(""));
+	UE_LOG(LogTemp, Verbose, TEXT("THROTTLE DISTRIBUTION:"));
+	UE_LOG(LogTemp, Verbose, TEXT("  Forward (>0.1):  %d frames (%.1f%%)"), ForwardFrames, ForwardPct);
+	UE_LOG(LogTemp, Verbose, TEXT("  Backward (<-0.1): %d frames (%.1f%%)"), BackwardFrames, BackwardPct);
+	UE_LOG(LogTemp, Verbose, TEXT("  Idle (-0.1~0.1): %d frames (%.1f%%)"), IdleFrames, IdlePct);
+	UE_LOG(LogTemp, Verbose, TEXT("  Mean Throttle: %.3f"), MeanThrottle);
+	UE_LOG(LogTemp, Verbose, TEXT(""));
+	UE_LOG(LogTemp, Verbose, TEXT("STEERING DISTRIBUTION:"));
+	UE_LOG(LogTemp, Verbose, TEXT("  Left (<-0.1):   %d frames (%.1f%%)"), LeftSteeringFrames, LeftPct);
+	UE_LOG(LogTemp, Verbose, TEXT("  Right (>0.1):   %d frames (%.1f%%)"), RightSteeringFrames, RightPct);
+	UE_LOG(LogTemp, Verbose, TEXT("  Straight (-0.1~0.1): %d frames (%.1f%%)"), StraightFrames, StraightPct);
+	UE_LOG(LogTemp, Verbose, TEXT("  Mean Steering: %.3f"), MeanSteering);
+	UE_LOG(LogTemp, Verbose, TEXT(""));
 
 	// Check for potential issues and provide warnings
 	bool bHasWarnings = false;
@@ -2057,8 +2057,8 @@ void ATankLearningAgentsManager::ValidateDataDiversity()
 	}
 	else if (RecordedExperiencesCount < 10000)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("NOTE: Small dataset (%d frames)"), RecordedExperiencesCount);
-		UE_LOG(LogTemp, Warning, TEXT("  -> May need more data for complex behaviors"));
+		UE_LOG(LogTemp, Verbose, TEXT("NOTE: Small dataset (%d frames)"), RecordedExperiencesCount);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> May need more data for complex behaviors"));
 		bHasWarnings = true;
 	}
 
@@ -2085,40 +2085,40 @@ void ATankLearningAgentsManager::ValidateDataDiversity()
 	else if (SteeringImbalance > 15.0f)
 	{
 		const TCHAR* BiasDirection = (LeftPct > RightPct) ? TEXT("LEFT") : TEXT("RIGHT");
-		UE_LOG(LogTemp, Warning, TEXT("NOTE: Mild steering bias (%.1f%% toward %s)"), SteeringImbalance, BiasDirection);
+		UE_LOG(LogTemp, Verbose, TEXT("NOTE: Mild steering bias (%.1f%% toward %s)"), SteeringImbalance, BiasDirection);
 		bHasWarnings = true;
 	}
 
 	// Idle throttle check (too much stopping)
 	if (IdlePct > 40.0f)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("NOTE: High idle time (%.1f%% not moving)"), IdlePct);
-		UE_LOG(LogTemp, Warning, TEXT("  -> Consider trimming pause segments from recording"));
+		UE_LOG(LogTemp, Verbose, TEXT("NOTE: High idle time (%.1f%% not moving)"), IdlePct);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Consider trimming pause segments from recording"));
 		bHasWarnings = true;
 	}
 
 	// Straight steering check (not enough turning)
 	if (StraightPct > 80.0f)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("NOTE: Very straight driving (%.1f%% no steering)"), StraightPct);
-		UE_LOG(LogTemp, Warning, TEXT("  -> AI may not learn to navigate tight corners well"));
-		UE_LOG(LogTemp, Warning, TEXT("  -> Consider recording more complex routes with turns"));
+		UE_LOG(LogTemp, Verbose, TEXT("NOTE: Very straight driving (%.1f%% no steering)"), StraightPct);
+		UE_LOG(LogTemp, Verbose, TEXT("  -> AI may not learn to navigate tight corners well"));
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Consider recording more complex routes with turns"));
 		bHasWarnings = true;
 	}
 
 	// Final verdict
-	UE_LOG(LogTemp, Warning, TEXT(""));
+	UE_LOG(LogTemp, Verbose, TEXT(""));
 	if (!bHasWarnings)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VERDICT: Data diversity looks GOOD!"));
-		UE_LOG(LogTemp, Warning, TEXT("  -> Balanced throttle and steering distribution"));
-		UE_LOG(LogTemp, Warning, TEXT("  -> Ready for training"));
+		UE_LOG(LogTemp, Verbose, TEXT("VERDICT: Data diversity looks GOOD!"));
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Balanced throttle and steering distribution"));
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Ready for training"));
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VERDICT: Data has some issues (see warnings above)"));
-		UE_LOG(LogTemp, Warning, TEXT("  -> Training may still work, but AI behavior could be biased"));
-		UE_LOG(LogTemp, Warning, TEXT("  -> Consider recording additional diverse data"));
+		UE_LOG(LogTemp, Verbose, TEXT("VERDICT: Data has some issues (see warnings above)"));
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Training may still work, but AI behavior could be biased"));
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Consider recording additional diverse data"));
 	}
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 }

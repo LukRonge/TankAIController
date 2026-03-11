@@ -9,6 +9,7 @@
 #include "AIShootingComponent.h"
 #include "AILearningAgentsController.generated.h"
 
+
 // Forward declarations for Learning Agents (standalone inference)
 class ULearningAgentsManager;
 class ULearningAgentsPolicy;
@@ -91,7 +92,7 @@ public:
 
 	/** Time with low velocity before considered stuck (seconds) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|StuckDetection", meta = (ClampMin = "0.5", ClampMax = "5.0"))
-	float StuckTimeThreshold = 1.5f;
+	float StuckTimeThreshold = 2.5f;
 
 	/** Velocity below this is considered "not moving" (cm/s) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|StuckDetection", meta = (ClampMin = "5.0", ClampMax = "50.0"))
@@ -105,6 +106,21 @@ public:
 	 *  When tank is actively turning, low forward speed is expected and not a stuck condition. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|StuckDetection", meta = (ClampMin = "0.1", ClampMax = "0.9"))
 	float StuckSteeringThreshold = 0.3f;
+
+	// ========== DAMAGE RESPONSE SETTINGS ==========
+
+	/** Enable turret smooth rotation toward instigator when tank receives damage */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|DamageResponse")
+	bool bEnableDamageResponse = true;
+
+	/** How long the turret prioritizes the damage instigator location (seconds).
+	 *  After this time, turret returns to normal targeting (waypoint/detected enemy). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|DamageResponse", meta = (ClampMin = "0.5", ClampMax = "10.0"))
+	float DamageResponseDuration = 3.0f;
+
+	/** Check if turret is currently reacting to damage instigator */
+	UFUNCTION(BlueprintPure, Category = "AI|DamageResponse")
+	bool IsRespondingToDamage() const { return bIsRespondingToDamage; }
 
 	// ========== TURRET CONTROL SETTINGS ==========
 
@@ -270,12 +286,43 @@ protected:
 	UFUNCTION()
 	void OnEnemyLostHandler(AActor* Enemy);
 
+	/** Bind/unbind damage response delegate to controlled tank (for subclasses that bypass OnPossess) */
+	void BindDamageResponseDelegate();
+	void UnbindDamageResponseDelegate();
+
 public:
+	// ========== CIRCLE/NO-PROGRESS DETECTION ==========
+
+	/** Enable detection of circling behavior (moving but not approaching waypoint) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|CircleDetection")
+	bool bEnableCircleDetection = true;
+
+	/** Time without waypoint progress before considered circling (seconds) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|CircleDetection", meta = (ClampMin = "2.0", ClampMax = "15.0"))
+	float CircleDetectionTime = 5.0f;
+
+	/** Minimum distance closer to waypoint required per check interval to count as progress (cm) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|CircleDetection", meta = (ClampMin = "10.0", ClampMax = "200.0"))
+	float MinProgressDistance = 50.0f;
+
+	/** How often to sample waypoint distance for progress check (seconds) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|CircleDetection", meta = (ClampMin = "0.5", ClampMax = "3.0"))
+	float ProgressCheckInterval = 1.0f;
+
+	/** Steering bias threshold (0-1). If average steering over time exceeds this, tank is turning one way.
+	 *  Lower = more sensitive. 0.3 means average 30% steering in one direction triggers faster detection. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|CircleDetection", meta = (ClampMin = "0.1", ClampMax = "0.8"))
+	float CircleSteeringBiasThreshold = 0.3f;
+
+	/** Check if tank is circling (moving but not making progress) */
+	UFUNCTION(BlueprintPure, Category = "AI|CircleDetection")
+	bool IsCircling() const { return bIsCircling; }
+
 	// ========== RECOVERY SETTINGS ==========
 
-	/** Distance to reverse during recovery (cm) - max 100cm */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Recovery", meta = (ClampMin = "50.0", ClampMax = "150.0"))
-	float RecoveryReverseDistance = 100.0f;
+	/** Distance to reverse during recovery (cm). Lower = easier to succeed, higher = more displacement. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Recovery", meta = (ClampMin = "10.0", ClampMax = "150.0"))
+	float RecoveryReverseDistance = 25.0f;
 
 	/** Throttle during recovery (negative = reverse) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Recovery", meta = (ClampMin = "-1.0", ClampMax = "-0.2"))
@@ -353,6 +400,25 @@ protected:
 
 	/** Get rear clearance from line traces (index 12 = rear in 24-trace ellipse) */
 	float GetRearClearance() const;
+
+	/** Check if tank is circling (moving but not approaching waypoint) and handle recovery */
+	void UpdateCircleDetection(float DeltaTime);
+
+	/** Reset circle detection state (called when waypoints change) */
+	void ResetCircleDetection();
+
+
+	// ========== DAMAGE RESPONSE METHODS ==========
+
+	/** Handler for tank damage received delegate */
+	UFUNCTION()
+	void OnTankDamageReceivedHandler(const FVector& HitLocation, float DamageAmount, int32 KillerPlayerControllerIndex);
+
+	/** Update damage response timer and clear state when expired */
+	void UpdateDamageResponse(float DeltaTime);
+
+	/** Find attacker pawn by player controller index */
+	AActor* FindAttackerPawnByIndex(int32 PlayerControllerIndex) const;
 
 	// ========== TURRET CONTROL METHODS ==========
 
@@ -435,6 +501,17 @@ protected:
 	/** Target turret pitch in degrees */
 	float TargetTurretPitch = 0.0f;
 
+	// ========== CACHED PRIORITY TARGET (perf optimization) ==========
+
+	/** Cached target location from GetTurretAimTargetLocation - updated by events, not every frame */
+	FVector CachedTurretTargetLocation = FVector::ZeroVector;
+
+	/** Whether cached target needs recalculation */
+	bool bTurretTargetDirty = true;
+
+	/** Mark turret target cache as dirty (called on awareness/detection events) */
+	void InvalidateTurretTargetCache() { bTurretTargetDirty = true; }
+
 	// ========== STUCK STATE ==========
 
 	/** Timer for stuck detection */
@@ -454,6 +531,44 @@ protected:
 
 	/** Timer tracking how long current recovery has been running (seconds) */
 	float RecoveryTimer = 0.0f;
+
+	// ========== DAMAGE RESPONSE STATE ==========
+
+	/** Currently responding to damage (turret tracking instigator) */
+	bool bIsRespondingToDamage = false;
+
+	/** Timer for damage response duration */
+	float DamageResponseTimer = 0.0f;
+
+	/** Location of the damage instigator (attacker's pawn position) */
+	FVector DamageInstigatorLocation = FVector::ZeroVector;
+
+	/** Weak reference to damage instigator actor (for tracking moving targets) */
+	TWeakObjectPtr<AActor> DamageInstigatorActor;
+
+	// ========== CIRCLE DETECTION STATE ==========
+
+	/** Whether tank is circling (moving but not making progress toward waypoint) */
+	bool bIsCircling = false;
+
+	/** Timer tracking time without waypoint progress */
+	float NoProgressTimer = 0.0f;
+
+	/** Timer for periodic distance sampling */
+	float ProgressSampleTimer = 0.0f;
+
+	/** Last sampled distance to current waypoint (for progress comparison) */
+	float LastSampledDistanceToWaypoint = 0.0f;
+
+	/** Whether we have a valid initial distance sample */
+	bool bHasDistanceSample = false;
+
+	/** Accumulated steering values for bias detection (positive = right, negative = left) */
+	float SteeringAccumulator = 0.0f;
+
+	/** Total time accumulated for steering bias calculation */
+	float SteeringAccumulatorTime = 0.0f;
+
 
 public:
 	// ========== AI ACTION API ==========

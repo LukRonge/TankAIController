@@ -302,6 +302,20 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat|State")
 	int32 GetCurrentWaypointIndex() const { return CurrentWaypointIndex; }
 
+	/** Notify that an enemy awareness state has changed - avoids polling in UpdateCombatState */
+	void NotifyAwarenessChanged(EAwarenessState NewState)
+	{
+		bAwarenessDirty = true;
+		// Fast-path: if new state is higher than cached, update immediately
+		if (NewState > CachedHighestAwareness)
+		{
+			CachedHighestAwareness = NewState;
+		}
+	}
+
+	/** Notify that an enemy was lost - need to recalculate highest awareness */
+	void NotifyEnemyLost() { bAwarenessDirty = true; }
+
 	/** Get current waypoint (or nullptr if none) */
 	const FCombatWaypoint* GetCurrentWaypoint() const;
 
@@ -468,6 +482,12 @@ protected:
 
 	/** Timer for "under fire" state */
 	float UnderFireTimer = 0.0f;
+
+	/** Cached highest awareness state - updated by NotifyAwarenessChanged instead of polling */
+	EAwarenessState CachedHighestAwareness = EAwarenessState::Unaware;
+
+	/** Whether cached awareness needs refresh from full enemy list */
+	bool bAwarenessDirty = true;
 
 	/** Timer for current waypoint wait */
 	float WaypointWaitTimer = 0.0f;

@@ -102,6 +102,20 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces")
 	bool bDrawDebugTraces = false;
 
+	/** Front traces update interval in seconds (0.05 = 20Hz). Front hemisphere is critical for driving. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces", meta = (ClampMin = "0.0", ClampMax = "0.2"))
+	float FrontTraceUpdateInterval = 0.05f;
+
+	/** Rear traces update interval in seconds (0.1 = 10Hz). Rear hemisphere is less critical. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tank|LineTraces", meta = (ClampMin = "0.0", ClampMax = "0.2"))
+	float RearTraceUpdateInterval = 0.1f;
+
+	/** Accumulated time since last front trace update */
+	float FrontTraceTimer = 0.0f;
+
+	/** Accumulated time since last rear trace update */
+	float RearTraceTimer = 0.0f;
+
 	// ========== LATERAL CLEARANCE (NARROW CORRIDOR SPECIFIC) ==========
 
 	/** Distance for lateral (left/right) clearance traces in cm */
@@ -127,8 +141,8 @@ protected:
 
 	// ========== METHODS ==========
 
-	/** Perform line traces in ellipse pattern around tank */
-	void PerformLineTraces();
+	/** Perform line traces in ellipse pattern around tank. Front/rear hemispheres update independently. */
+	void PerformLineTraces(bool bUpdateFront = true, bool bUpdateRear = true);
 
 	/** Perform dedicated lateral traces for left/right clearance */
 	void PerformLateralTraces();

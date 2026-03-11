@@ -55,7 +55,7 @@ void UTankWaypointComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		const FVector WPLoc = GetCurrentWaypointLocation();
 		const float DistToWP = FVector::Dist2D(PawnLoc, WPLoc);
 
-		UE_LOG(LogTemp, Log, TEXT("[NavMesh WP] Index=%d/%d, DistToCurrentWP=%.0fcm, ReachRadius=%.0fcm, Target=%.0fcm away"),
+		UE_LOG(LogTemp, Verbose, TEXT("[NavMesh WP] Index=%d/%d, DistToCurrentWP=%.0fcm, ReachRadius=%.0fcm, Target=%.0fcm away"),
 			CurrentWaypointIndex, Waypoints.Num(), DistToWP, WaypointReachRadius,
 			FVector::Dist2D(PawnLoc, CurrentTargetLocation));
 	}
@@ -127,7 +127,7 @@ bool UTankWaypointComponent::GenerateRandomTarget()
 			// Generate waypoints to the new target
 			GenerateWaypointsToTarget();
 
-			UE_LOG(LogTemp, Log, TEXT("WaypointComponent: Target at %.1fm, %d waypoints"),
+			UE_LOG(LogTemp, Verbose, TEXT("WaypointComponent: Target at %.1fm, %d waypoints"),
 				FVector::Dist(Origin, CurrentTargetLocation) / 100.0f, Waypoints.Num());
 
 			return true;
@@ -260,7 +260,7 @@ bool UTankWaypointComponent::RegenerateWaypointsFromCurrentPosition()
 		return false;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("WaypointComponent: Regenerating waypoints"));
+	UE_LOG(LogTemp, Verbose, TEXT("WaypointComponent: Regenerating waypoints"));
 
 	const bool bSuccess = GenerateWaypointsToTarget();
 
@@ -320,7 +320,7 @@ void UTankWaypointComponent::AdvanceToNextWaypoint()
 		// Log only at key milestones
 		if (AreAllWaypointsCompleted())
 		{
-			UE_LOG(LogTemp, Log, TEXT("WaypointComponent: All %d waypoints completed"), Waypoints.Num());
+			UE_LOG(LogTemp, Verbose, TEXT("WaypointComponent: All %d waypoints completed"), Waypoints.Num());
 		}
 	}
 }

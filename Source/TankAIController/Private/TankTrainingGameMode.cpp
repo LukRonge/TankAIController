@@ -22,7 +22,7 @@ ATankTrainingGameMode::ATankTrainingGameMode()
 	{
 		TrainerTankClass = TankBPClass.Class;
 		AITankClass = TankBPClass.Class; // Both use same BP class
-		UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Tank classes set to BP_WR_Tank_Pawn"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankTrainingGameMode: Tank classes set to BP_WR_Tank_Pawn"));
 	}
 	else
 	{
@@ -37,7 +37,7 @@ ATankTrainingGameMode::ATankTrainingGameMode()
 	// We will manually spawn trainer and AI tanks in BeginPlay
 	DefaultPawnClass = nullptr;
 
-	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Constructor - PlayerControllerClass set to HumanPlayerController"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankTrainingGameMode: Constructor - PlayerControllerClass set to HumanPlayerController"));
 }
 
 void ATankTrainingGameMode::BeginPlay()
@@ -88,11 +88,11 @@ void ATankTrainingGameMode::BeginPlay()
 	// 4. Register tanks with Learning Agents Manager
 	RegisterTanksWithManager();
 
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Setup complete"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> AI Tanks: %d"), AITanks.Num());
-	UE_LOG(LogTemp, Warning, TEXT("  -> AI Movement: DISABLED (press NumPad7 to start)"));
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankTrainingGameMode: Setup complete"));
+	UE_LOG(LogTemp, Verbose, TEXT("  -> AI Tanks: %d"), AITanks.Num());
+	UE_LOG(LogTemp, Verbose, TEXT("  -> AI Movement: DISABLED (press NumPad7 to start)"));
+	UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 }
 
 void ATankTrainingGameMode::SpawnTrainerTank()
@@ -204,7 +204,7 @@ void ATankTrainingGameMode::SpawnAITanksAtPlayerStarts()
 
 	if (FoundPlayerStarts.Num() == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: No PlayerStart actors found! Spawning at AgentSpawnLocation instead."));
+		UE_LOG(LogTemp, Verbose, TEXT("TankTrainingGameMode: No PlayerStart actors found! Spawning at AgentSpawnLocation instead."));
 		SpawnAgentTank();
 		return;
 	}
@@ -221,7 +221,7 @@ void ATankTrainingGameMode::SpawnAITanksAtPlayerStarts()
 			AWR_Tank_Pawn* SpawnedTank = SpawnAgentTankAtLocation(SpawnLocation, SpawnRotation);
 			if (SpawnedTank)
 			{
-				UE_LOG(LogTemp, Log, TEXT("TankTrainingGameMode: Spawned AI Tank at PlayerStart: %s"), *SpawnLocation.ToString());
+				UE_LOG(LogTemp, Verbose, TEXT("TankTrainingGameMode: Spawned AI Tank at PlayerStart: %s"), *SpawnLocation.ToString());
 			}
 		}
 	}
@@ -251,7 +251,7 @@ void ATankTrainingGameMode::StartAllAITanks()
 		}
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Started %d AI tanks!"), AIControllers.Num());
+	UE_LOG(LogTemp, Verbose, TEXT("TankTrainingGameMode: Started %d AI tanks!"), AIControllers.Num());
 
 	if (GEngine)
 	{
@@ -277,7 +277,7 @@ void ATankTrainingGameMode::StopAllAITanks()
 		}
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Stopped %d AI tanks!"), AIControllers.Num());
+	UE_LOG(LogTemp, Verbose, TEXT("TankTrainingGameMode: Stopped %d AI tanks!"), AIControllers.Num());
 
 	if (GEngine)
 	{
@@ -312,19 +312,19 @@ void ATankTrainingGameMode::RegisterTanksWithManager()
 
 	if (!Manager)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: No ATankLearningAgentsManager actor found in world!"));
-		UE_LOG(LogTemp, Warning, TEXT("  → Tanks spawned but not registered with Learning Agents system."));
-		UE_LOG(LogTemp, Warning, TEXT("  → Place an ATankLearningAgentsManager actor in the level to enable AI training."));
+		UE_LOG(LogTemp, Verbose, TEXT("TankTrainingGameMode: No ATankLearningAgentsManager actor found in world!"));
+		UE_LOG(LogTemp, Verbose, TEXT("  → Tanks spawned but not registered with Learning Agents system."));
+		UE_LOG(LogTemp, Verbose, TEXT("  → Place an ATankLearningAgentsManager actor in the level to enable AI training."));
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("TankTrainingGameMode: Found Learning Agents Manager, registering tanks..."));
+	UE_LOG(LogTemp, Verbose, TEXT("TankTrainingGameMode: Found Learning Agents Manager, registering tanks..."));
 
 	// Register ONLY trainer tank for recording phase
 	if (TrainerTank)
 	{
 		Manager->RegisterTrainerTank(TrainerTank);
-		UE_LOG(LogTemp, Log, TEXT("  → Trainer tank registered: %s"), *TrainerTank->GetName());
+		UE_LOG(LogTemp, Verbose, TEXT("  → Trainer tank registered: %s"), *TrainerTank->GetName());
 	}
 	else
 	{
@@ -337,14 +337,14 @@ void ATankTrainingGameMode::RegisterTanksWithManager()
 	if (AgentTank)
 	{
 		Manager->SetAgentTank(AgentTank);
-		UE_LOG(LogTemp, Log, TEXT("  → Agent tank reference stored in Manager (NOT registered yet)"));
+		UE_LOG(LogTemp, Verbose, TEXT("  → Agent tank reference stored in Manager (NOT registered yet)"));
 	}
 	else
 	{
 		UE_LOG(LogTemp, Error, TEXT("  → Agent tank is null, cannot store reference!"));
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("TankTrainingGameMode: Agent tank stored but NOT registered (prevents recording warnings)"));
-	UE_LOG(LogTemp, Warning, TEXT("  → AI tank will be automatically registered when training stops"));
-	UE_LOG(LogTemp, Log, TEXT("TankTrainingGameMode: Tank registration complete (Trainer only)."));
+	UE_LOG(LogTemp, Verbose, TEXT("TankTrainingGameMode: Agent tank stored but NOT registered (prevents recording warnings)"));
+	UE_LOG(LogTemp, Verbose, TEXT("  → AI tank will be automatically registered when training stops"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankTrainingGameMode: Tank registration complete (Trainer only)."));
 }

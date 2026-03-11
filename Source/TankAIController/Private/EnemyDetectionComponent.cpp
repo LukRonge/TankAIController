@@ -81,7 +81,7 @@ void UEnemyDetectionComponent::BeginPlay()
 	// It will be enabled when EnableInferenceMode() is called (NumPad 7)
 	// This keeps the AI tank inactive until explicitly started.
 
-	UE_LOG(LogTemp, Log, TEXT("EnemyDetectionComponent: BeginPlay - Detection DISABLED (waiting for inference mode)"));
+	UE_LOG(LogTemp, Verbose, TEXT("EnemyDetectionComponent: BeginPlay - Detection DISABLED (waiting for inference mode)"));
 }
 
 void UEnemyDetectionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -156,11 +156,11 @@ void UEnemyDetectionComponent::UpdateDetection(float DeltaTime)
 	// Debug: Log if eye location or look direction is invalid
 	if (EyeLocation.IsZero())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("EnemyDetection: EyeLocation is ZERO - pawn or turret not found?"));
+		UE_LOG(LogTemp, Verbose, TEXT("EnemyDetection: EyeLocation is ZERO - pawn or turret not found?"));
 	}
 	if (LookDir.IsNearlyZero())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("EnemyDetection: LookDir is ZERO - turret not found?"));
+		UE_LOG(LogTemp, Verbose, TEXT("EnemyDetection: LookDir is ZERO - turret not found?"));
 	}
 
 	// Reset raycast budget for this frame
@@ -402,13 +402,22 @@ float UEnemyDetectionComponent::CalculateVisibilityToTarget(AActor* Target, FVec
 			VisibleWeight += Socket.Weight;
 			OutBestVisibleLocation = SocketLocation;
 			OutVisibleMask |= (1 << i);
+
+			// Early exit on first visible socket - enemy is confirmed visible
+			// Remaining sockets only refine visibility %, not worth the raycast cost
+			// Estimate remaining weight as visible (optimistic - enemy is at least partially visible)
+			for (int32 j = i + 1; j < NumSockets; ++j)
+			{
+				TotalWeight += DetectionConfig.TargetSockets[j].Weight;
+				VisibleWeight += DetectionConfig.TargetSockets[j].Weight * 0.5f; // Estimate 50% for unchecked
+			}
+			break;
 		}
 
 		// Early exit if budget exhausted
 		if (RemainingRaycastBudget <= 0)
 		{
 			// Scale up based on partial check
-			const float CheckedWeight = TotalWeight;
 			const float ScaleFactor = DetectionConfig.TargetSockets.Num() > 0 ?
 				(float)(i + 1) / DetectionConfig.TargetSockets.Num() : 1.0f;
 			TotalWeight /= ScaleFactor;
@@ -980,13 +989,13 @@ AWR_Turret* UEnemyDetectionComponent::EnsureTurretCached() const
 		if (!bTurretSetupLogged)
 		{
 			bTurretSetupLogged = true;
-			UE_LOG(LogTemp, Log, TEXT("========================================"));
-			UE_LOG(LogTemp, Log, TEXT("EnemyDetection: TURRET DETECTED"));
-			UE_LOG(LogTemp, Log, TEXT("  -> Turret: %s"), *Turret->GetName());
-			UE_LOG(LogTemp, Log, TEXT("  -> PitchComponent: %s"), Turret->PitchComponent ? TEXT("YES") : TEXT("NO"));
-			UE_LOG(LogTemp, Log, TEXT("  -> YawComponent: %s"), Turret->YawComponent ? TEXT("YES") : TEXT("NO"));
-			UE_LOG(LogTemp, Log, TEXT("  -> Detection will follow TURRET direction"));
-			UE_LOG(LogTemp, Log, TEXT("========================================"));
+			UE_LOG(LogTemp, Verbose, TEXT("========================================"));
+			UE_LOG(LogTemp, Verbose, TEXT("EnemyDetection: TURRET DETECTED"));
+			UE_LOG(LogTemp, Verbose, TEXT("  -> Turret: %s"), *Turret->GetName());
+			UE_LOG(LogTemp, Verbose, TEXT("  -> PitchComponent: %s"), Turret->PitchComponent ? TEXT("YES") : TEXT("NO"));
+			UE_LOG(LogTemp, Verbose, TEXT("  -> YawComponent: %s"), Turret->YawComponent ? TEXT("YES") : TEXT("NO"));
+			UE_LOG(LogTemp, Verbose, TEXT("  -> Detection will follow TURRET direction"));
+			UE_LOG(LogTemp, Verbose, TEXT("========================================"));
 		}
 	}
 	else if (!bTurretSetupLogged)

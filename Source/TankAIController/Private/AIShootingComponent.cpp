@@ -931,21 +931,21 @@ bool UAIShootingComponent::CanFire(EWeaponSlot Weapon) const
 	// Must have acquired target
 	if (!ShootingState.bTargetAcquired)
 	{
-		if (bShouldLog) UE_LOG(LogTemp, Warning, TEXT("[Shooting] CanFire=NO: Target not acquired (Reaction: %.2fs)"), ShootingState.ReactionTimeRemaining);
+		if (bShouldLog) UE_LOG(LogTemp, Verbose, TEXT("[Shooting] CanFire=NO: Target not acquired (Reaction: %.2fs)"), ShootingState.ReactionTimeRemaining);
 		return false;
 	}
 
 	// Must have line of sight
 	if (!Context.bHasLineOfSight)
 	{
-		if (bShouldLog) UE_LOG(LogTemp, Warning, TEXT("[Shooting] CanFire=NO: No line of sight"));
+		if (bShouldLog) UE_LOG(LogTemp, Verbose, TEXT("[Shooting] CanFire=NO: No line of sight"));
 		return false;
 	}
 
 	// Turret must be on target
 	if (!IsTurretOnTarget())
 	{
-		if (bShouldLog) UE_LOG(LogTemp, Warning, TEXT("[Shooting] CanFire=NO: Turret not on target (Angle: %.1f > Max: %.1f)"), Context.AngleToTarget, Config.MaxFireAngle);
+		if (bShouldLog) UE_LOG(LogTemp, Verbose, TEXT("[Shooting] CanFire=NO: Turret not on target (Angle: %.1f > Max: %.1f)"), Context.AngleToTarget, Config.MaxFireAngle);
 		return false;
 	}
 
@@ -953,7 +953,7 @@ bool UAIShootingComponent::CanFire(EWeaponSlot Weapon) const
 	int32 Ammo = GetAmmoCount(Weapon);
 	if (Ammo <= 0)
 	{
-		if (bShouldLog) UE_LOG(LogTemp, Warning, TEXT("[Shooting] CanFire=NO: No ammo"));
+		if (bShouldLog) UE_LOG(LogTemp, Verbose, TEXT("[Shooting] CanFire=NO: No ammo"));
 		return false;
 	}
 
@@ -962,7 +962,7 @@ bool UAIShootingComponent::CanFire(EWeaponSlot Weapon) const
 	{
 		if (!CanUseSecondaryWeapon())
 		{
-			if (bShouldLog) UE_LOG(LogTemp, Warning, TEXT("[Shooting] CanFire=NO: Can't use secondary"));
+			if (bShouldLog) UE_LOG(LogTemp, Verbose, TEXT("[Shooting] CanFire=NO: Can't use secondary"));
 			return false;
 		}
 	}
@@ -970,11 +970,11 @@ bool UAIShootingComponent::CanFire(EWeaponSlot Weapon) const
 	// Burst cooldown check
 	if (ShootingState.BurstCooldownTimer > 0.0f)
 	{
-		if (bShouldLog) UE_LOG(LogTemp, Warning, TEXT("[Shooting] CanFire=NO: Burst cooldown (%.2fs)"), ShootingState.BurstCooldownTimer);
+		if (bShouldLog) UE_LOG(LogTemp, Verbose, TEXT("[Shooting] CanFire=NO: Burst cooldown (%.2fs)"), ShootingState.BurstCooldownTimer);
 		return false;
 	}
 
-	if (bShouldLog) UE_LOG(LogTemp, Log, TEXT("[Shooting] CanFire=YES! Firing at %s"), *CurrentTarget->GetName());
+	if (bShouldLog) UE_LOG(LogTemp, Verbose, TEXT("[Shooting] CanFire=YES! Firing at %s"), *CurrentTarget->GetName());
 	return true;
 }
 
@@ -1224,6 +1224,6 @@ void UAIShootingComponent::DrawDebugVisualization() const
 
 void UAIShootingComponent::LogShootingEvent(const FString& Event) const
 {
-	UE_LOG(LogTemp, Log, TEXT("AIShootingComponent [%s]: %s"),
+	UE_LOG(LogTemp, Verbose, TEXT("AIShootingComponent [%s]: %s"),
 		GetOwner() ? *GetOwner()->GetName() : TEXT("Unknown"), *Event);
 }

@@ -36,7 +36,7 @@ void AHumanPlayerController::BeginPlay()
 		                 GEngine->GameViewport->Viewport->GetSizeXY().Y / 2);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("HumanPlayerController: Ready for training"));
+	UE_LOG(LogTemp, Verbose, TEXT("HumanPlayerController: Ready for training"));
 }
 
 void AHumanPlayerController::SetupInputComponent()
@@ -126,7 +126,7 @@ void AHumanPlayerController::Tick(float DeltaTime)
 		{
 			if (bIsAnalogInput)
 			{
-				UE_LOG(LogTemp, Log, TEXT("[INPUT] GAMEPAD detected: Throttle=%.3f Steering=%.3f (raw analog)"),
+				UE_LOG(LogTemp, Verbose, TEXT("[INPUT] GAMEPAD detected: Throttle=%.3f Steering=%.3f (raw analog)"),
 					CurrentThrottle, CurrentSteering);
 			}
 		}

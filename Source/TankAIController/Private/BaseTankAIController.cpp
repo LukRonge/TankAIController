@@ -37,7 +37,7 @@ void ABaseTankAIController::BeginPlay()
 	if (WaypointComponent)
 	{
 		WaypointComponent->RegisterComponent();
-		UE_LOG(LogTemp, Log, TEXT("%s: WaypointComponent created"), *GetName());
+		UE_LOG(LogTemp, Verbose, TEXT("%s: WaypointComponent created"), *GetName());
 	}
 }
 
@@ -47,11 +47,26 @@ void ABaseTankAIController::Tick(float DeltaTime)
 
 	if (ControlledTank)
 	{
-		// Perform line traces for obstacle detection
-		PerformLineTraces();
+		// Front traces at 20Hz (driving-critical), rear traces at 10Hz (less important)
+		FrontTraceTimer += DeltaTime;
+		RearTraceTimer += DeltaTime;
 
-		// Perform lateral traces for corridor wall detection
-		PerformLateralTraces();
+		const bool bUpdateFront = FrontTraceTimer >= FrontTraceUpdateInterval;
+		const bool bUpdateRear = RearTraceTimer >= RearTraceUpdateInterval;
+
+		if (bUpdateFront || bUpdateRear)
+		{
+			if (bUpdateFront) FrontTraceTimer = 0.0f;
+			if (bUpdateRear) RearTraceTimer = 0.0f;
+
+			PerformLineTraces(bUpdateFront, bUpdateRear);
+
+			// Lateral traces follow front update rate
+			if (bUpdateFront)
+			{
+				PerformLateralTraces();
+			}
+		}
 
 		// Update angular velocity for smooth steering observation
 		UpdateAngularVelocity(DeltaTime);
@@ -67,7 +82,7 @@ void ABaseTankAIController::OnPossess(APawn* InPawn)
 
 	if (ControlledTank)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("%s::OnPossess - Successfully possessed tank: %s (Class: %s)"),
+		UE_LOG(LogTemp, Verbose, TEXT("%s::OnPossess - Successfully possessed tank: %s (Class: %s)"),
 			*GetName(), *ControlledTank->GetName(), *ControlledTank->GetClass()->GetName());
 
 		// NOTE: bUseAITurretControl is set by AI-specific controllers (e.g., AILearningAgentsController)
@@ -77,7 +92,7 @@ void ABaseTankAIController::OnPossess(APawn* InPawn)
 		// Check if tank implements WR_ControlsInterface
 		if (ControlledTank->GetClass()->ImplementsInterface(UWR_ControlsInterface::StaticClass()))
 		{
-			UE_LOG(LogTemp, Log, TEXT("  -> Tank implements IWR_ControlsInterface: YES"));
+			UE_LOG(LogTemp, Verbose, TEXT("  -> Tank implements IWR_ControlsInterface: YES"));
 		}
 		else
 		{
@@ -91,7 +106,7 @@ void ABaseTankAIController::OnPossess(APawn* InPawn)
 	}
 }
 
-void ABaseTankAIController::PerformLineTraces()
+void ABaseTankAIController::PerformLineTraces(bool bUpdateFront, bool bUpdateRear)
 {
 	if (!ControlledTank)
 	{
@@ -110,9 +125,17 @@ void ABaseTankAIController::PerformLineTraces()
 	QueryParams.AddIgnoredActor(ControlledTank);
 	QueryParams.bTraceComplex = false;
 
+	// Front/rear hemisphere boundary: indices 0..QuarterCount and (NumLineTraces-QuarterCount)..NumLineTraces-1 are front
+	const int32 QuarterCount = NumLineTraces / 4; // 6 for 24 traces
+
 	// Perform traces
 	for (int32 i = 0; i < TracePoints.Num(); i++)
 	{
+		// Skip traces not scheduled for this update
+		const bool bIsFrontTrace = (i <= QuarterCount || i >= NumLineTraces - QuarterCount);
+		if (bIsFrontTrace && !bUpdateFront) continue;
+		if (!bIsFrontTrace && !bUpdateRear) continue;
+
 		// Calculate angle for this trace
 		const float Angle = (2.0f * PI * i) / NumLineTraces;
 

@@ -18,6 +18,7 @@
 #include "LearningAgentsInteractor.h"
 #include "LearningAgentsNeuralNetwork.h"
 #include "Misc/Paths.h"
+#include "EngineUtils.h"
 
 // Static member definitions - shared across all AI controllers
 ULearningAgentsManager* AAILearningAgentsController::SharedManager = nullptr;
@@ -48,7 +49,10 @@ void AAILearningAgentsController::OnPossess(APawn* InPawn)
 	if (ControlledTank)
 	{
 		ControlledTank->bUseAITurretControl = true;
-		UE_LOG(LogTemp, Log, TEXT("AAILearningAgentsController::OnPossess: bUseAITurretControl = TRUE (AI handles turret)"));
+		UE_LOG(LogTemp, Verbose, TEXT("AAILearningAgentsController::OnPossess: bUseAITurretControl = TRUE (AI handles turret)"));
+
+		// Bind damage response - turret smoothly rotates toward instigator when hit
+		BindDamageResponseDelegate();
 
 		// Initialize Learning Agents inference when we have a valid tank
 		// BeginPlay runs before OnPossess, so ControlledTank may be null there
@@ -69,7 +73,7 @@ void AAILearningAgentsController::BeginPlay()
 	// WaypointComponent is created in BaseTankAIController::BeginPlay()
 
 	// Log configuration
-	UE_LOG(LogTemp, Log, TEXT("AAILearningAgentsController: StuckDetection=%s, ReverseDistance=%.0fcm, MaxAttempts=%d"),
+	UE_LOG(LogTemp, Verbose, TEXT("AAILearningAgentsController: StuckDetection=%s, ReverseDistance=%.0fcm, MaxAttempts=%d"),
 		bEnableStuckDetection ? TEXT("ON") : TEXT("OFF"), RecoveryReverseDistance, MaxRecoveryAttempts);
 
 	// PRE-INITIALIZE Learning Agents to avoid lag when Num7 is pressed
@@ -96,16 +100,10 @@ void AAILearningAgentsController::BeginPlay()
 		EnemyDetectionComponent->bDrawDebug = false;
 		EnemyDetectionComponent->DebugDrawDuration = 0.0f; // Single frame updates
 
-		UE_LOG(LogTemp, Log, TEXT("========================================"));
-		UE_LOG(LogTemp, Log, TEXT("AAILearningAgentsController: EnemyDetection READY"));
-		UE_LOG(LogTemp, Log, TEXT("  -> Detection Range: %.0f m"), EnemyDetectionComponent->DetectionConfig.MaxDetectionRange / 100.0f);
-		UE_LOG(LogTemp, Log, TEXT("  -> FOV: %.0f deg (half-angle: %.0f)"), EnemyDetectionComponent->DetectionConfig.DetectionFOVHalfAngle * 2.0f, EnemyDetectionComponent->DetectionConfig.DetectionFOVHalfAngle);
-		UE_LOG(LogTemp, Log, TEXT("  -> Peripheral Vision: +%.0f deg"), EnemyDetectionComponent->DetectionConfig.PeripheralVisionAngle);
-		UE_LOG(LogTemp, Log, TEXT("  -> Max Tracked Enemies: %d"), EnemyDetectionComponent->MaxTrackedEnemies);
-		UE_LOG(LogTemp, Log, TEXT("  -> Debug Visualization: %s"), bEnableDetectionDebug ? TEXT("ENABLED") : TEXT("DISABLED"));
-		UE_LOG(LogTemp, Log, TEXT("  -> Enemy Targeting: %s (Min Awareness: %d)"), bEnableEnemyTargeting ? TEXT("ENABLED") : TEXT("DISABLED"), static_cast<int32>(MinAwarenessForTargeting));
-		UE_LOG(LogTemp, Log, TEXT("  -> TeamID: %d (free-for-all mode)"), EnemyDetectionComponent->TeamID);
-		UE_LOG(LogTemp, Log, TEXT("========================================"));
+		UE_LOG(LogTemp, Verbose, TEXT("AAILearningAgentsController: EnemyDetection READY (Range: %.0fm, FOV: %.0f, MaxTracked: %d)"),
+			EnemyDetectionComponent->DetectionConfig.MaxDetectionRange / 100.0f,
+			EnemyDetectionComponent->DetectionConfig.DetectionFOVHalfAngle * 2.0f,
+			EnemyDetectionComponent->MaxTrackedEnemies);
 	}
 
 	// Setup combat maneuver component
@@ -125,17 +123,13 @@ void AAILearningAgentsController::BeginPlay()
 		CombatManeuverComponent->bDrawDebug = false;
 		CombatManeuverComponent->bLogManeuverSelection = false;
 
-		UE_LOG(LogTemp, Log, TEXT("========================================"));
-		UE_LOG(LogTemp, Log, TEXT("AAILearningAgentsController: CombatManeuver READY"));
-		UE_LOG(LogTemp, Log, TEXT("  -> Combat Maneuvers: ENABLED"));
-		UE_LOG(LogTemp, Log, TEXT("  -> Debug Visualization: %s"), bEnableCombatDebug ? TEXT("ENABLED") : TEXT("DISABLED"));
-		UE_LOG(LogTemp, Log, TEXT("========================================"));
+		UE_LOG(LogTemp, Verbose, TEXT("AAILearningAgentsController: CombatManeuver READY"));
 	}
 	else if (CombatManeuverComponent)
 	{
 		// Disable combat component if combat maneuvers are disabled
 		CombatManeuverComponent->bEnabled = false;
-		UE_LOG(LogTemp, Log, TEXT("AAILearningAgentsController: CombatManeuver DISABLED"));
+		UE_LOG(LogTemp, Verbose, TEXT("AAILearningAgentsController: CombatManeuver DISABLED"));
 	}
 
 	// Setup AI shooting component
@@ -157,13 +151,16 @@ void AAILearningAgentsController::BeginPlay()
 
 void AAILearningAgentsController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	UE_LOG(LogTemp, Warning, TEXT("[AIFlow] === EndPlay === Controller: %s | Reason: %d | AgentId: %d | bRegistered: %d"),
+	UE_LOG(LogTemp, Verbose, TEXT("[AIFlow] === EndPlay === Controller: %s | Reason: %d | AgentId: %d | bRegistered: %d"),
 		*GetName(), static_cast<int32>(EndPlayReason), LocalAgentId, bRegisteredWithSharedManager);
+
+	// Unbind damage response delegate
+	UnbindDamageResponseDelegate();
 
 	// Unregister this controller's tank from shared manager
 	if (bRegisteredWithSharedManager && SharedManager && LocalAgentId != INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[AIFlow]   EndPlay: Removing agent %d from SharedManager (remaining agents: %d)"),
+		UE_LOG(LogTemp, Verbose, TEXT("[AIFlow]   EndPlay: Removing agent %d from SharedManager (remaining agents: %d)"),
 			LocalAgentId, SharedManager->GetAgentNum() - 1);
 		SharedManager->RemoveAgent(LocalAgentId);
 		bRegisteredWithSharedManager = false;
@@ -178,7 +175,7 @@ void AAILearningAgentsController::EndPlay(const EEndPlayReason::Type EndPlayReas
 		// Check if manager has no more agents
 		if (SharedManager->GetAgentNum() == 0)
 		{
-			UE_LOG(LogTemp, Log, TEXT("AILearningAgentsController: Cleaning up shared Learning Agents objects..."));
+			UE_LOG(LogTemp, Verbose, TEXT("AILearningAgentsController: Cleaning up shared Learning Agents objects..."));
 
 			// Remove from root to allow garbage collection
 			if (SharedPolicy)
@@ -198,7 +195,7 @@ void AAILearningAgentsController::EndPlay(const EEndPlayReason::Type EndPlayReas
 			}
 
 			bSharedLearningAgentsInitialized = false;
-			UE_LOG(LogTemp, Log, TEXT("AILearningAgentsController: Shared Learning Agents cleanup complete"));
+			UE_LOG(LogTemp, Verbose, TEXT("AILearningAgentsController: Shared Learning Agents cleanup complete"));
 		}
 	}
 
@@ -244,20 +241,32 @@ void AAILearningAgentsController::Tick(float DeltaTime)
 		UpdateStuckDetection(DeltaTime);
 	}
 
-	// 2. Update turret aim toward waypoint (always update, even during recovery)
+	// 1b. Update circle detection (moving but not making progress)
+	if (bEnableCircleDetection && !bIsRecovering)
+	{
+		UpdateCircleDetection(DeltaTime);
+	}
+
+	// 2. Update damage response timer
+	if (bIsRespondingToDamage)
+	{
+		UpdateDamageResponse(DeltaTime);
+	}
+
+	// 3. Update turret aim toward waypoint (always update, even during recovery)
 	UpdateTurretAimToWaypoint(DeltaTime);
 
-	// 3. Update AI shooting system
+	// 4. Update AI shooting system
 	UpdateShooting(DeltaTime);
 
-	// 4. If recovering, handle recovery movement and skip normal AI control
+	// 5. If recovering, handle recovery movement and skip normal AI control
 	if (bIsRecovering)
 	{
 		UpdateRecovery(DeltaTime);
 		return;
 	}
 
-	// 5. MOVEMENT - Use neural network inference OR simple waypoint following
+	// 6. MOVEMENT - Use neural network inference OR simple waypoint following
 	if (bUseLearningAgentsInference && bRegisteredWithSharedManager)
 	{
 		// Neural network inference - uses trained policy (shared across all AI tanks)
@@ -274,6 +283,8 @@ void AAILearningAgentsController::Tick(float DeltaTime)
 			if (WaypointComponent->IsTargetReached() || WaypointComponent->AreAllWaypointsCompleted())
 			{
 				WaypointComponent->GenerateRandomTarget();
+				InvalidateTurretTargetCache();
+				ResetCircleDetection();
 			}
 		}
 	}
@@ -286,7 +297,7 @@ void AAILearningAgentsController::Tick(float DeltaTime)
 
 void AAILearningAgentsController::SetAIMovementEnabled(bool bEnabled)
 {
-	UE_LOG(LogTemp, Log, TEXT("[AIFlow] SetAIMovementEnabled: %s -> %s | Tank: %s | bIsRecovering: %d | bIsStuck: %d | bInCombatMode: %d"),
+	UE_LOG(LogTemp, Verbose, TEXT("[AIFlow] SetAIMovementEnabled: %s -> %s | Tank: %s | bIsRecovering: %d | bIsStuck: %d | bInCombatMode: %d"),
 		bAIMovementEnabled ? TEXT("ON") : TEXT("OFF"),
 		bEnabled ? TEXT("ON") : TEXT("OFF"),
 		ControlledTank ? *ControlledTank->GetName() : TEXT("NULL"),
@@ -332,7 +343,7 @@ void AAILearningAgentsController::SetAIMovementEnabled(bool bEnabled)
 		// This handles edge cases where ControlledTank wasn't valid during BeginPlay
 		if (bUseLearningAgentsInference && !bRegisteredWithSharedManager && ControlledTank)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("AILearningAgentsController: Late initialization of Learning Agents (fallback path)"));
+			UE_LOG(LogTemp, Verbose, TEXT("AILearningAgentsController: Late initialization of Learning Agents (fallback path)"));
 			InitializeLearningAgentsForInference();
 		}
 
@@ -368,6 +379,7 @@ void AAILearningAgentsController::UpdateAutonomousMovement(float DeltaTime)
 	if (!WaypointComponent->HasActiveTarget())
 	{
 		WaypointComponent->GenerateRandomTarget();
+		ResetCircleDetection();
 		return;
 	}
 
@@ -376,6 +388,7 @@ void AAILearningAgentsController::UpdateAutonomousMovement(float DeltaTime)
 	if (WaypointComponent->AreAllWaypointsCompleted())
 	{
 		WaypointComponent->GenerateRandomTarget();
+		ResetCircleDetection();
 		return;
 	}
 
@@ -396,20 +409,22 @@ void AAILearningAgentsController::UpdateAutonomousMovement(float DeltaTime)
 	float DesiredSteering = FMath::Clamp(HeadingError * AutonomousSteeringSensitivity, -1.0f, 1.0f);
 
 	// Calculate throttle based on heading error
-	// Reduce throttle when turning sharply
+	// Reduce throttle when turning sharply, but keep minimum to prevent spinning in place
 	const float AbsHeadingError = FMath::Abs(HeadingError);
 	float DesiredThrottle = AutonomousThrottle;
 
 	if (AbsHeadingError > PI * 0.5f)
 	{
 		// Waypoint is behind us - need to turn around
-		// Use minimal throttle while turning
-		DesiredThrottle = AutonomousThrottle * 0.3f;
+		// Keep enough throttle for tracks to grip and turn
+		DesiredThrottle = FMath::Max(AutonomousThrottle * 0.5f, 0.3f);
+		// Limit steering to prevent pure rotation - tracks need some forward motion
+		DesiredSteering *= 0.7f;
 	}
 	else if (AbsHeadingError > PI * 0.25f)
 	{
-		// Sharp turn - reduce throttle
-		DesiredThrottle = AutonomousThrottle * 0.6f;
+		// Sharp turn - moderate throttle reduction
+		DesiredThrottle = FMath::Max(AutonomousThrottle * 0.7f, 0.3f);
 	}
 
 	// Apply movement
@@ -439,11 +454,11 @@ void AAILearningAgentsController::UpdateStuckDetection(float DeltaTime)
 	const bool bHasThrottleApplied = AbsThrottle > StuckThrottleThreshold;
 	const bool bIsNotMoving = CurrentSpeed < StuckVelocityThreshold;
 
-	// DEBUG: Log stuck detection state periodically
+	// DEBUG: Log stuck detection state periodically (Verbose to avoid log spam)
 	static int32 StuckDebugCounter = 0;
 	if (++StuckDebugCounter % 60 == 0)  // Every second
 	{
-		UE_LOG(LogTemp, Log, TEXT("[StuckDetection] Speed=%.1f(<%.1f?) Throttle=%.3f(>%.3f?) Steering=%.3f(>%.3f?) | HasThrottle=%d NotMoving=%d Turning=%d | Timer=%.2f/%.2f"),
+		UE_LOG(LogTemp, Verbose, TEXT("[StuckDetection] Speed=%.1f(<%.1f?) Throttle=%.3f(>%.3f?) Steering=%.3f(>%.3f?) | HasThrottle=%d NotMoving=%d Turning=%d | Timer=%.2f/%.2f"),
 			CurrentSpeed, StuckVelocityThreshold,
 			AbsThrottle, StuckThrottleThreshold,
 			AbsSteering, StuckSteeringThreshold,
@@ -451,7 +466,14 @@ void AAILearningAgentsController::UpdateStuckDetection(float DeltaTime)
 			StuckTimer, StuckTimeThreshold);
 	}
 
-	if (bHasThrottleApplied && bIsNotMoving && !bIsActivelyTurning)
+	// Two stuck conditions:
+	// 1. Normal stuck: throttle applied, not moving, not turning (hit a wall)
+	// 2. Spinning stuck: turning in place with throttle but zero forward speed for extended time
+	//    (uses 2x threshold to allow some turning time before triggering)
+	const bool bNormalStuck = bHasThrottleApplied && bIsNotMoving && !bIsActivelyTurning;
+	const bool bSpinningStuck = bHasThrottleApplied && bIsNotMoving && bIsActivelyTurning;
+
+	if (bNormalStuck)
 	{
 		StuckTimer += DeltaTime;
 
@@ -461,9 +483,22 @@ void AAILearningAgentsController::UpdateStuckDetection(float DeltaTime)
 			StartRecovery();
 		}
 	}
+	else if (bSpinningStuck)
+	{
+		// Spinning in place - allow more time before triggering (2x normal threshold)
+		StuckTimer += DeltaTime;
+
+		if (StuckTimer >= StuckTimeThreshold * 2.0f && !bIsStuck)
+		{
+			UE_LOG(LogTemp, Verbose, TEXT("SPINNING STUCK detected! Turning in place for %.1fs - skipping reverse, regenerating waypoints"), StuckTimer);
+			bIsStuck = true;
+			// Spinning tanks can't reverse effectively - skip recovery and regenerate waypoints directly
+			OnRecoveryFailed();
+		}
+	}
 	else
 	{
-		// Moving normally OR actively turning - reset timer
+		// Moving normally - reset timer
 		StuckTimer = 0.0f;
 		bIsStuck = false;
 	}
@@ -487,12 +522,8 @@ void AAILearningAgentsController::StartRecovery()
 
 	if (RearClearance < MinRearClearanceForRecovery)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
-		UE_LOG(LogTemp, Warning, TEXT("STUCK DETECTED but CANNOT REVERSE!"));
-		UE_LOG(LogTemp, Warning, TEXT("  -> Rear clearance: %.1f cm < required %.1f cm"),
+		UE_LOG(LogTemp, Verbose, TEXT("STUCK DETECTED but CANNOT REVERSE! Rear clearance: %.1f cm < required %.1f cm"),
 			RearClearance, MinRearClearanceForRecovery);
-		UE_LOG(LogTemp, Warning, TEXT("  -> Skipping reverse, regenerating waypoints..."));
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
 
 		// Skip reverse recovery, go directly to waypoint regeneration
 		OnRecoveryFailed();
@@ -504,15 +535,8 @@ void AAILearningAgentsController::StartRecovery()
 	RecoveryAttemptCount++;
 	RecoveryTimer = 0.0f;  // Reset recovery timer
 
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("STUCK DETECTED! Starting recovery attempt %d/%d"),
-		RecoveryAttemptCount, MaxRecoveryAttempts);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Position: %s"), *RecoveryStartPosition.ToString());
-	UE_LOG(LogTemp, Warning, TEXT("  -> Rear clearance: %.1f cm (min: %.1f cm)"),
-		RearClearance, MinRearClearanceForRecovery);
-	UE_LOG(LogTemp, Warning, TEXT("  -> Reversing %.1f cm with throttle %.2f (timeout: %.1fs)"),
-		RecoveryReverseDistance, RecoveryThrottle, RecoveryTimeout);
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("STUCK DETECTED! Recovery attempt %d/%d | Pos: %s | Rear: %.1fcm"),
+		RecoveryAttemptCount, MaxRecoveryAttempts, *RecoveryStartPosition.ToString(), RearClearance);
 }
 
 void AAILearningAgentsController::UpdateRecovery(float DeltaTime)
@@ -524,6 +548,14 @@ void AAILearningAgentsController::UpdateRecovery(float DeltaTime)
 
 	// Update recovery timer
 	RecoveryTimer += DeltaTime;
+
+	// Phase 1: Brief brake to kill forward momentum (first 0.5s)
+	const float BrakePhaseDuration = 0.5f;
+	if (RecoveryTimer < BrakePhaseDuration)
+	{
+		ControlledTank->StopAIMovement();
+		return;
+	}
 
 	// Calculate distance moved from recovery start
 	const FVector CurrentPos = ControlledTank->GetActorLocation();
@@ -540,7 +572,7 @@ void AAILearningAgentsController::UpdateRecovery(float DeltaTime)
 	const float RearClearance = GetRearClearance();
 	if (RearClearance < MinRearClearanceForRecovery)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Recovery ABORTED - rear blocked! Clearance: %.1fcm < %.1fcm (moved %.1fcm)"),
+		UE_LOG(LogTemp, Verbose, TEXT("Recovery ABORTED - rear blocked! Clearance: %.1fcm < %.1fcm (moved %.1fcm)"),
 			RearClearance, MinRearClearanceForRecovery, DistanceMoved);
 
 		// If we moved at least some distance, consider it partial success
@@ -555,18 +587,19 @@ void AAILearningAgentsController::UpdateRecovery(float DeltaTime)
 		return;
 	}
 
-	// Check for timeout - if stuck too long, recovery has failed
-	if (RecoveryTimer >= RecoveryTimeout)
+	// Check for timeout (adjusted for brake phase)
+	if (RecoveryTimer >= RecoveryTimeout + BrakePhaseDuration)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Recovery TIMEOUT after %.1fs (moved only %.1fcm of %.1fcm)"),
+		UE_LOG(LogTemp, Verbose, TEXT("Recovery TIMEOUT after %.1fs (moved only %.1fcm of %.1fcm)"),
 			RecoveryTimer, DistanceMoved, RecoveryReverseDistance);
 		EndRecovery(false);
 		return;
 	}
 
-	// Apply recovery inputs - just reverse, no steering
-	// This gives AI clean reverse without turning
-	ApplyMovementToTank(RecoveryThrottle, 0.0f);
+	// Phase 2: Reverse with slight random steering to avoid getting stuck at same angle
+	// Alternate steering per attempt to try different escape angles
+	const float RecoverySteering = (RecoveryAttemptCount % 2 == 0) ? 0.3f : -0.3f;
+	ApplyMovementToTank(RecoveryThrottle, RecoverySteering);
 }
 
 void AAILearningAgentsController::EndRecovery(bool bSuccess)
@@ -580,12 +613,12 @@ void AAILearningAgentsController::EndRecovery(bool bSuccess)
 		const FVector CurrentPos = ControlledTank->GetActorLocation();
 		const float ActualDistance = FVector::Dist2D(RecoveryStartPosition, CurrentPos);
 
-		UE_LOG(LogTemp, Warning, TEXT("Recovery SUCCESS! Moved %.1f cm"), ActualDistance);
+		UE_LOG(LogTemp, Verbose, TEXT("Recovery SUCCESS! Moved %.1f cm"), ActualDistance);
 		RecoveryAttemptCount = 0;  // Reset on success
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Recovery INCOMPLETE - attempt %d/%d"),
+		UE_LOG(LogTemp, Verbose, TEXT("Recovery INCOMPLETE - attempt %d/%d"),
 			RecoveryAttemptCount, MaxRecoveryAttempts);
 
 		if (RecoveryAttemptCount >= MaxRecoveryAttempts)
@@ -614,11 +647,231 @@ void AAILearningAgentsController::OnRecoveryFailed()
 	StuckTimer = 0.0f;      // BUG FIX: Give tank time to respond to new waypoints (1.5s before next detection)
 	bIsRecovering = false;  // Ensure recovery flag is cleared
 
+	// Reset circle detection since we're regenerating waypoints
+	ResetCircleDetection();
+
 	// Regenerate waypoints from current position
 	if (WaypointComponent)
 	{
 		WaypointComponent->RegenerateWaypointsFromCurrentPosition();
 	}
+}
+
+// ========== CIRCLE DETECTION ==========
+
+void AAILearningAgentsController::UpdateCircleDetection(float DeltaTime)
+{
+	if (!WaypointComponent || !ControlledTank || !WaypointComponent->HasActiveTarget())
+	{
+		ResetCircleDetection();
+		return;
+	}
+
+	if (WaypointComponent->AreAllWaypointsCompleted())
+	{
+		ResetCircleDetection();
+		return;
+	}
+
+	// Only check when tank is actually moving (speed > stuck threshold)
+	const float CurrentSpeed = FMath::Abs(GetForwardSpeed());
+	if (CurrentSpeed < StuckVelocityThreshold)
+	{
+		// Not moving - stuck detection handles this, not circle detection
+		return;
+	}
+
+	// === Per-frame tracking ===
+
+	// Accumulate steering bias (positive = right, negative = left)
+	SteeringAccumulator += CurrentSteering * DeltaTime;
+	SteeringAccumulatorTime += DeltaTime;
+
+	// === Periodic sampling ===
+	const FVector TankLocation = ControlledTank->GetActorLocation();
+	const FVector CurrentWaypointLocation = WaypointComponent->GetCurrentWaypointLocation();
+	const float CurrentDistanceToWaypoint = FVector::Dist2D(TankLocation, CurrentWaypointLocation);
+
+	// Initialize waypoint distance sample
+	if (!bHasDistanceSample)
+	{
+		LastSampledDistanceToWaypoint = CurrentDistanceToWaypoint;
+		bHasDistanceSample = true;
+		ProgressSampleTimer = 0.0f;
+		NoProgressTimer = 0.0f;
+		return;
+	}
+
+	ProgressSampleTimer += DeltaTime;
+	if (ProgressSampleTimer >= ProgressCheckInterval)
+	{
+		ProgressSampleTimer = 0.0f;
+
+		const float ProgressMade = LastSampledDistanceToWaypoint - CurrentDistanceToWaypoint;
+
+		if (ProgressMade >= MinProgressDistance)
+		{
+			// Making real progress toward waypoint - reset everything
+			NoProgressTimer = 0.0f;
+			bIsCircling = false;
+			SteeringAccumulator = 0.0f;
+			SteeringAccumulatorTime = 0.0f;
+		}
+		else
+		{
+			NoProgressTimer += ProgressCheckInterval;
+		}
+
+		LastSampledDistanceToWaypoint = CurrentDistanceToWaypoint;
+	}
+
+	// === Circle detection: steering bias + no waypoint progress ===
+	if (NoProgressTimer < 2.0f || SteeringAccumulatorTime < 1.0f)
+	{
+		return;
+	}
+
+	// Calculate steering bias: average steering over accumulated time
+	const float SteeringBias = FMath::Abs(SteeringAccumulator / SteeringAccumulatorTime);
+	const bool bHasSteeringBias = SteeringBias >= CircleSteeringBiasThreshold;
+
+	// Circle detected when: no progress for CircleDetectionTime AND consistent steering bias
+	if (NoProgressTimer >= CircleDetectionTime && bHasSteeringBias && !bIsCircling)
+	{
+		bIsCircling = true;
+
+		UE_LOG(LogTemp, Verbose, TEXT("CIRCLE DETECTED! No progress for %.1fs, steering bias: %.2f, dist: %.1fcm"),
+			NoProgressTimer, SteeringBias, CurrentDistanceToWaypoint);
+
+		ResetCircleDetection();
+
+		// Trigger the existing stuck/recovery mechanism
+		bIsStuck = true;
+		StartRecovery();
+	}
+}
+
+void AAILearningAgentsController::ResetCircleDetection()
+{
+	bIsCircling = false;
+	NoProgressTimer = 0.0f;
+	ProgressSampleTimer = 0.0f;
+	LastSampledDistanceToWaypoint = 0.0f;
+	bHasDistanceSample = false;
+	SteeringAccumulator = 0.0f;
+	SteeringAccumulatorTime = 0.0f;
+}
+
+// ========== DAMAGE RESPONSE ==========
+
+void AAILearningAgentsController::BindDamageResponseDelegate()
+{
+	if (bEnableDamageResponse && ControlledTank)
+	{
+		ControlledTank->OnDamageReceived.AddDynamic(this, &AAILearningAgentsController::OnTankDamageReceivedHandler);
+		UE_LOG(LogTemp, Verbose, TEXT("[AIFlow] DamageResponse delegate BOUND for tank: %s"), *ControlledTank->GetName());
+	}
+}
+
+void AAILearningAgentsController::UnbindDamageResponseDelegate()
+{
+	if (ControlledTank)
+	{
+		ControlledTank->OnDamageReceived.RemoveDynamic(this, &AAILearningAgentsController::OnTankDamageReceivedHandler);
+	}
+}
+
+void AAILearningAgentsController::OnTankDamageReceivedHandler(const FVector& HitLocation, float DamageAmount, int32 KillerPlayerControllerIndex)
+{
+	if (!bEnableDamageResponse || !ControlledTank)
+	{
+		return;
+	}
+
+	// Skip if already targeting a detected enemy (detection system has priority)
+	if (bIsTargetingEnemy && CurrentTurretTarget.IsValid())
+	{
+		return;
+	}
+
+	// Find the attacker's pawn
+	AActor* AttackerPawn = FindAttackerPawnByIndex(KillerPlayerControllerIndex);
+
+	if (AttackerPawn)
+	{
+		DamageInstigatorActor = AttackerPawn;
+		DamageInstigatorLocation = AttackerPawn->GetActorLocation();
+	}
+	else
+	{
+		// No pawn found - use hit location as rough direction
+		DamageInstigatorActor = nullptr;
+		DamageInstigatorLocation = HitLocation;
+	}
+
+	bIsRespondingToDamage = true;
+	DamageResponseTimer = 0.0f;
+
+	// Force turret target recalculation
+	InvalidateTurretTargetCache();
+
+	UE_LOG(LogTemp, Verbose, TEXT("DAMAGE RESPONSE: Hit by player %d! Turret rotating to %s (%.0f cm away)"),
+		KillerPlayerControllerIndex,
+		AttackerPawn ? *AttackerPawn->GetName() : TEXT("hit location"),
+		FVector::Dist(ControlledTank->GetActorLocation(), DamageInstigatorLocation));
+}
+
+void AAILearningAgentsController::UpdateDamageResponse(float DeltaTime)
+{
+	DamageResponseTimer += DeltaTime;
+
+	// Update instigator location if actor is still valid (tracks moving targets)
+	if (DamageInstigatorActor.IsValid())
+	{
+		DamageInstigatorLocation = DamageInstigatorActor->GetActorLocation();
+		// Target cache already invalidated on damage event; turret smoothly interpolates toward it
+	}
+
+	// Check if detected enemy system has taken over (enemy now properly detected)
+	if (bIsTargetingEnemy && CurrentTurretTarget.IsValid())
+	{
+		UE_LOG(LogTemp, Verbose, TEXT("DAMAGE RESPONSE: Enemy now detected by detection system - handing off"));
+		bIsRespondingToDamage = false;
+		DamageInstigatorActor = nullptr;
+		DamageInstigatorLocation = FVector::ZeroVector;
+		return;
+	}
+
+	// Expire after duration
+	if (DamageResponseTimer >= DamageResponseDuration)
+	{
+		UE_LOG(LogTemp, Verbose, TEXT("DAMAGE RESPONSE: Expired after %.1fs - returning to normal targeting"), DamageResponseDuration);
+		bIsRespondingToDamage = false;
+		DamageInstigatorActor = nullptr;
+		DamageInstigatorLocation = FVector::ZeroVector;
+		InvalidateTurretTargetCache();
+	}
+}
+
+AActor* AAILearningAgentsController::FindAttackerPawnByIndex(int32 PlayerControllerIndex) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	// Iterate all tank pawns and find one matching the killer's PlayerControllerUniqueNetId
+	for (TActorIterator<AWR_Tank_Pawn> It(World); It; ++It)
+	{
+		AWR_Tank_Pawn* TankPawn = *It;
+		if (TankPawn && TankPawn != ControlledTank && TankPawn->GetPlayerControllerUniqueNetId() == PlayerControllerIndex)
+		{
+			return TankPawn;
+		}
+	}
+
+	return nullptr;
 }
 
 // ========== AI ACTION API ==========
@@ -689,7 +942,7 @@ float AAILearningAgentsController::GetHeadingErrorToWaypoint() const
 FVector AAILearningAgentsController::GetTurretAimTargetLocation() const
 {
 	// This method returns the location and updates targeting state
-	// Priority: Enemy (if valid AND in front) > Last Known Position (with delay) > Waypoint
+	// Priority: Enemy (detected) > Damage Instigator > Last Known Position (with delay) > Waypoint
 
 	AAILearningAgentsController* MutableThis = const_cast<AAILearningAgentsController*>(this);
 
@@ -729,6 +982,19 @@ FVector AAILearningAgentsController::GetTurretAimTargetLocation() const
 		}
 	}
 
+	// Check damage response - turret tracks instigator when hit (below detected enemies, above waypoints)
+	if (bIsRespondingToDamage && !DamageInstigatorLocation.IsZero())
+	{
+		// Not considered "targeting enemy" for detection purposes, but turret aims at instigator
+		// This allows the detection system FOV to sweep toward the attacker and detect them naturally
+		MutableThis->bIsTargetingEnemy = false;
+		MutableThis->CurrentTurretTarget = nullptr;
+
+		FVector InstigatorTarget = DamageInstigatorLocation;
+		InstigatorTarget.Z += WaypointAimHeight;  // Aim at body height
+		return InstigatorTarget;
+	}
+
 	// No valid enemy target - check if we should hold last position (delay period)
 	// Check: Have a last known location AND within delay period
 	// NOTE: We don't use bIsTargetingEnemy here because we need to set it to FALSE
@@ -749,7 +1015,7 @@ FVector AAILearningAgentsController::GetTurretAimTargetLocation() const
 	// Delay expired or no last position - log transition if needed
 	if (ReturnToWaypointTimer >= ReturnToWaypointDelay && !LastEnemyTargetLocation.IsZero())
 	{
-		UE_LOG(LogTemp, Log, TEXT("Turret: ReturnToWaypointDelay expired (%.2f sec), switching to waypoint mode"),
+		UE_LOG(LogTemp, Verbose, TEXT("Turret: ReturnToWaypointDelay expired (%.2f sec), switching to waypoint mode"),
 			ReturnToWaypointDelay);
 	}
 
@@ -797,8 +1063,13 @@ void AAILearningAgentsController::UpdateTurretAimToWaypoint(float DeltaTime)
 	AActor* PreviousTarget = CurrentTurretTarget.Get();
 	const bool bHadLastEnemyLocation = !LastEnemyTargetLocation.IsZero();  // Track if we were in delay period
 
-	// Get target location for aiming (this also updates bIsTargetingEnemy, CurrentTurretTarget, and LastEnemyTargetLocation)
-	const FVector TargetLocation = GetTurretAimTargetLocation();
+	// Get target location for aiming (cached - only recalculated when detection state changes)
+	if (bTurretTargetDirty)
+	{
+		CachedTurretTargetLocation = GetTurretAimTargetLocation();
+		bTurretTargetDirty = false;
+	}
+	const FVector TargetLocation = CachedTurretTargetLocation;
 
 	// Update return-to-waypoint timer AFTER getting target location
 	// Timer counts when:
@@ -810,11 +1081,22 @@ void AAILearningAgentsController::UpdateTurretAimToWaypoint(float DeltaTime)
 	{
 		// In delay period - increment timer
 		ReturnToWaypointTimer += DeltaTime;
+		// Re-evaluate target when delay might expire
+		if (ReturnToWaypointTimer >= ReturnToWaypointDelay)
+		{
+			bTurretTargetDirty = true;
+		}
 	}
 	else if (bIsTargetingEnemy)
 	{
-		// Actively targeting - reset timer
+		// Actively targeting - reset timer, but also mark dirty so we track moving enemies
 		ReturnToWaypointTimer = 0.0f;
+		bTurretTargetDirty = true;
+	}
+	else if (bIsRespondingToDamage)
+	{
+		// Tracking damage instigator - mark dirty so turret follows moving target
+		bTurretTargetDirty = true;
 	}
 	// When LastEnemyTargetLocation is cleared (delay expired), timer stays at its value
 	// but that's OK because we won't re-enter delay without a new LastEnemyTargetLocation
@@ -937,7 +1219,7 @@ void AAILearningAgentsController::UpdateTurretAimToWaypoint(float DeltaTime)
 		const float DebugAbsSteering = FMath::Abs(CurrentSteering);
 		const bool bDirectAimActive = bIsTargetingEnemy && DebugAbsSteering > TurretCompensationSteeringThreshold;
 
-		UE_LOG(LogTemp, Log, TEXT("AI Turret [%s]: Yaw %.1f (err:%.1f) | Steering=%.2f%s"),
+		UE_LOG(LogTemp, Verbose, TEXT("AI Turret [%s]: Yaw %.1f (err:%.1f) | Steering=%.2f%s"),
 			*TargetInfo,
 			CurrentTurretYaw, YawError, CurrentSteering,
 			bDirectAimActive ? TEXT(" [DIRECT AIM]") : TEXT(""));
@@ -948,12 +1230,15 @@ void AAILearningAgentsController::UpdateTurretAimToWaypoint(float DeltaTime)
 
 void AAILearningAgentsController::OnEnemyDetectedHandler(AActor* Enemy, const FDetectedEnemyInfo& Info)
 {
+	// Invalidate turret target cache - new enemy detected
+	InvalidateTurretTargetCache();
+
 	if (!bNotifyDetectedEnemyHUD || !Enemy)
 	{
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("AI Controller: Enemy DETECTED - %s (Visibility: %.0f%%, State: %d)"),
+	UE_LOG(LogTemp, Verbose, TEXT("AI Controller: Enemy DETECTED - %s (Visibility: %.0f%%, State: %d)"),
 		*Enemy->GetName(), Info.VisibilityPercent * 100.0f, static_cast<int32>(Info.AwarenessState));
 
 	// Show on-screen debug message (similar to Recording/Training notifications)
@@ -992,12 +1277,21 @@ void AAILearningAgentsController::OnEnemyDetectedHandler(AActor* Enemy, const FD
 
 void AAILearningAgentsController::OnAwarenessStateChangedHandler(AActor* Enemy, EAwarenessState OldState, EAwarenessState NewState)
 {
+	// Invalidate turret target cache - awareness changed may affect priority target selection
+	InvalidateTurretTargetCache();
+
+	// Notify combat maneuver component to avoid polling
+	if (CombatManeuverComponent)
+	{
+		CombatManeuverComponent->NotifyAwarenessChanged(NewState);
+	}
+
 	if (!bNotifyDetectedEnemyHUD || !Enemy)
 	{
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("AI Controller: Enemy awareness changed - %s (State: %d -> %d)"),
+	UE_LOG(LogTemp, Verbose, TEXT("AI Controller: Enemy awareness changed - %s (State: %d -> %d)"),
 		*Enemy->GetName(), static_cast<int32>(OldState), static_cast<int32>(NewState));
 
 	// Show on-screen debug message for state transitions
@@ -1038,12 +1332,21 @@ void AAILearningAgentsController::OnAwarenessStateChangedHandler(AActor* Enemy, 
 
 void AAILearningAgentsController::OnEnemyLostHandler(AActor* Enemy)
 {
+	// Invalidate turret target cache - enemy lost
+	InvalidateTurretTargetCache();
+
+	// Notify combat maneuver component to recalculate highest awareness
+	if (CombatManeuverComponent)
+	{
+		CombatManeuverComponent->NotifyEnemyLost();
+	}
+
 	if (!bNotifyDetectedEnemyHUD || !Enemy)
 	{
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("AI Controller: Enemy LOST - %s"), *Enemy->GetName());
+	UE_LOG(LogTemp, Verbose, TEXT("AI Controller: Enemy LOST - %s"), *Enemy->GetName());
 
 	// Show on-screen debug message
 	if (GEngine)
@@ -1057,7 +1360,7 @@ void AAILearningAgentsController::OnEnemyLostHandler(AActor* Enemy)
 
 void AAILearningAgentsController::OnCombatStateChangedHandler(ECombatState OldState, ECombatState NewState)
 {
-	UE_LOG(LogTemp, Log, TEXT("AI Controller: Combat state changed - %s -> %s"),
+	UE_LOG(LogTemp, Verbose, TEXT("AI Controller: Combat state changed - %s -> %s"),
 		*CombatManeuverUtils::GetCombatStateName(OldState),
 		*CombatManeuverUtils::GetCombatStateName(NewState));
 
@@ -1094,7 +1397,7 @@ void AAILearningAgentsController::OnCombatStateChangedHandler(ECombatState OldSt
 
 void AAILearningAgentsController::OnManeuverStartedHandler(const FCombatManeuver& Maneuver)
 {
-	UE_LOG(LogTemp, Log, TEXT("AI Controller: Maneuver STARTED - %s with %d waypoints"),
+	UE_LOG(LogTemp, Verbose, TEXT("AI Controller: Maneuver STARTED - %s with %d waypoints"),
 		*CombatManeuverUtils::GetManeuverTypeName(Maneuver.ManeuverType),
 		Maneuver.Waypoints.Num());
 
@@ -1110,14 +1413,14 @@ void AAILearningAgentsController::OnManeuverStartedHandler(const FCombatManeuver
 
 void AAILearningAgentsController::OnManeuverCompletedHandler(const FCombatManeuver& Maneuver, bool bSuccess)
 {
-	UE_LOG(LogTemp, Log, TEXT("AI Controller: Maneuver COMPLETED - %s (%s)"),
+	UE_LOG(LogTemp, Verbose, TEXT("AI Controller: Maneuver COMPLETED - %s (%s)"),
 		*CombatManeuverUtils::GetManeuverTypeName(Maneuver.ManeuverType),
 		bSuccess ? TEXT("Success") : TEXT("Cancelled"));
 }
 
 void AAILearningAgentsController::OnCombatWaypointAdvancedHandler(int32 NewIndex, const FCombatWaypoint& Waypoint)
 {
-	UE_LOG(LogTemp, Log, TEXT("AI Controller: Combat waypoint advanced to %d - Fire=%d, Reverse=%d, Speed=%.2f"),
+	UE_LOG(LogTemp, Verbose, TEXT("AI Controller: Combat waypoint advanced to %d - Fire=%d, Reverse=%d, Speed=%.2f"),
 		NewIndex, Waypoint.bShouldFire ? 1 : 0, Waypoint.bReverseMovement ? 1 : 0, Waypoint.DesiredSpeed);
 }
 
@@ -1131,11 +1434,9 @@ void AAILearningAgentsController::EnterCombatMode()
 	}
 
 	bInCombatMode = true;
+	ResetCircleDetection();
 
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
-	UE_LOG(LogTemp, Warning, TEXT("AI Controller: ENTERING COMBAT MODE"));
-	UE_LOG(LogTemp, Warning, TEXT("  -> Switching from patrol to combat waypoints"));
-	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Verbose, TEXT("AI Controller: ENTERING COMBAT MODE"));
 
 	// Combat waypoints are managed by CombatManeuverComponent
 	// It will push waypoints to WaypointComponent automatically
@@ -1149,8 +1450,9 @@ void AAILearningAgentsController::ExitCombatMode()
 	}
 
 	bInCombatMode = false;
+	ResetCircleDetection();
 
-	UE_LOG(LogTemp, Warning, TEXT("AI Controller: EXITING COMBAT MODE -> Returning to patrol"));
+	UE_LOG(LogTemp, Verbose, TEXT("AI Controller: EXITING COMBAT MODE -> Returning to patrol"));
 
 	// Generate new random patrol waypoint
 	// Note: GenerateRandomTarget() already calls GenerateWaypointsToTarget() internally
@@ -1270,8 +1572,7 @@ void AAILearningAgentsController::InitializeLearningAgentsForInference()
 	// Check if trained policy exists
 	if (!DoTrainedPolicyFilesExist())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AILearningAgentsController: No trained policy found - using simple waypoint navigation"));
-		UE_LOG(LogTemp, Warning, TEXT("  -> Expected path: Saved/LearningAgents/Policies/TankPolicy_*.bin"));
+		UE_LOG(LogTemp, Verbose, TEXT("AILearningAgentsController: No trained policy found - using simple waypoint navigation"));
 		return;
 	}
 
@@ -1280,9 +1581,7 @@ void AAILearningAgentsController::InitializeLearningAgentsForInference()
 	// ========================================================================
 	if (!bSharedLearningAgentsInitialized)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
-		UE_LOG(LogTemp, Warning, TEXT("AILearningAgentsController: Creating SHARED Learning Agents"));
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
+		UE_LOG(LogTemp, Verbose, TEXT("AILearningAgentsController: Creating SHARED Learning Agents"));
 
 		// 1. Create shared Manager - use controller as outer for proper component registration
 		SharedManager = NewObject<ULearningAgentsManager>(this, ULearningAgentsManager::StaticClass(), TEXT("SharedLearningAgentsManager"));
@@ -1294,7 +1593,7 @@ void AAILearningAgentsController::InitializeLearningAgentsForInference()
 		SharedManager->AddToRoot();  // Prevent garbage collection
 		SharedManager->RegisterComponent();
 		SharedManager->SetMaxAgentNum(32);  // Support multiple tanks
-		UE_LOG(LogTemp, Log, TEXT("  -> SharedManager created"));
+		UE_LOG(LogTemp, Verbose, TEXT("  -> SharedManager created"));
 
 		// 2. Create shared Interactor
 		SharedInteractor = Cast<UTankLearningAgentsInteractor>(
@@ -1309,7 +1608,7 @@ void AAILearningAgentsController::InitializeLearningAgentsForInference()
 			return;
 		}
 		SharedInteractor->AddToRoot();  // Prevent garbage collection
-		UE_LOG(LogTemp, Log, TEXT("  -> SharedInteractor created"));
+		UE_LOG(LogTemp, Verbose, TEXT("  -> SharedInteractor created"));
 
 		// 3. Create shared Policy (must match training settings)
 		FLearningAgentsPolicySettings PolicySettings;
@@ -1341,16 +1640,14 @@ void AAILearningAgentsController::InitializeLearningAgentsForInference()
 			return;
 		}
 		SharedPolicy->AddToRoot();  // Prevent garbage collection
-		UE_LOG(LogTemp, Log, TEXT("  -> SharedPolicy created"));
+		UE_LOG(LogTemp, Verbose, TEXT("  -> SharedPolicy created"));
 
 		// 4. Load trained weights (only once)
 		LoadTrainedPolicy();
 
 		bSharedLearningAgentsInitialized = true;
 
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
-		UE_LOG(LogTemp, Warning, TEXT("SHARED LEARNING AGENTS READY"));
-		UE_LOG(LogTemp, Warning, TEXT("========================================"));
+		UE_LOG(LogTemp, Verbose, TEXT("SHARED LEARNING AGENTS READY"));
 	}
 
 	// ========================================================================
@@ -1365,7 +1662,7 @@ void AAILearningAgentsController::InitializeLearningAgentsForInference()
 
 	bRegisteredWithSharedManager = true;
 
-	UE_LOG(LogTemp, Log, TEXT("AILearningAgentsController: Tank %s registered (AgentId: %d)"),
+	UE_LOG(LogTemp, Verbose, TEXT("AILearningAgentsController: Tank %s registered (AgentId: %d)"),
 		*ControlledTank->GetName(), LocalAgentId);
 }
 
@@ -1415,7 +1712,7 @@ void AAILearningAgentsController::LoadTrainedPolicy()
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("AILearningAgentsController: Loaded %d/3 network files"), LoadedCount);
+	UE_LOG(LogTemp, Verbose, TEXT("AILearningAgentsController: Loaded %d/3 network files"), LoadedCount);
 }
 
 void AAILearningAgentsController::ReloadTrainedPolicy()

@@ -8,7 +8,7 @@ void UTankTrainingHUD::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	UE_LOG(LogTemp, Warning, TEXT("TankTrainingHUD::NativeConstruct - Initializing HUD widget"));
+	UE_LOG(LogTemp, Verbose, TEXT("TankTrainingHUD::NativeConstruct - Initializing HUD widget"));
 
 	// Find the manager in the world
 	FindManager();
@@ -20,7 +20,7 @@ void UTankTrainingHUD::NativeConstruct()
 		bLastTrainingStatus = Manager->IsTraining();
 		LastTrainingProgress = Manager->GetTrainingProgress();
 
-		UE_LOG(LogTemp, Log, TEXT("  -> Initial status: Recording=%d, Training=%d, Progress=%.2f"),
+		UE_LOG(LogTemp, Verbose, TEXT("  -> Initial status: Recording=%d, Training=%d, Progress=%.2f"),
 			bLastRecordingStatus, bLastTrainingStatus, LastTrainingProgress);
 	}
 	else
@@ -48,7 +48,7 @@ void UTankTrainingHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 	if (bCurrentRecordingStatus != bLastRecordingStatus)
 	{
 		bLastRecordingStatus = bCurrentRecordingStatus;
-		UE_LOG(LogTemp, Warning, TEXT("TankTrainingHUD: Recording status CHANGED to %s"),
+		UE_LOG(LogTemp, Verbose, TEXT("TankTrainingHUD: Recording status CHANGED to %s"),
 			bCurrentRecordingStatus ? TEXT("RECORDING") : TEXT("NOT RECORDING"));
 
 		// Show on-screen message
@@ -67,7 +67,7 @@ void UTankTrainingHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 	if (bCurrentTrainingStatus != bLastTrainingStatus)
 	{
 		bLastTrainingStatus = bCurrentTrainingStatus;
-		UE_LOG(LogTemp, Warning, TEXT("TankTrainingHUD: Training status CHANGED to %s"),
+		UE_LOG(LogTemp, Verbose, TEXT("TankTrainingHUD: Training status CHANGED to %s"),
 			bCurrentTrainingStatus ? TEXT("TRAINING") : TEXT("NOT TRAINING"));
 
 		// Show on-screen message
@@ -149,11 +149,11 @@ void UTankTrainingHUD::FindManager()
 	if (FoundManagers.Num() > 0)
 	{
 		Manager = Cast<ATankLearningAgentsManager>(FoundManagers[0]);
-		UE_LOG(LogTemp, Log, TEXT("TankTrainingHUD: Found Manager: %s"), Manager ? *Manager->GetName() : TEXT("NULL"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankTrainingHUD: Found Manager: %s"), Manager ? *Manager->GetName() : TEXT("NULL"));
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankTrainingHUD: No TankLearningAgentsManager found in world!"));
+		UE_LOG(LogTemp, Verbose, TEXT("TankTrainingHUD: No TankLearningAgentsManager found in world!"));
 	}
 }
 

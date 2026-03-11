@@ -140,7 +140,7 @@ void UTankLearningAgentsInteractor::SpecifyAgentObservation_Implementation(
 		InObservationSchema,
 		ObservationElements);
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Observation schema specified (35 features: 24 traces + 4 corners + 1 speed + 3 wp_dir + 1 wp_dist_log + 1 angvel + 1 heading). v8.5: Distance now uses logarithmic scale."));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsInteractor: Observation schema specified (35 features: 24 traces + 4 corners + 1 speed + 3 wp_dir + 1 wp_dist_log + 1 angvel + 1 heading). v8.5: Distance now uses logarithmic scale."));
 }
 
 void UTankLearningAgentsInteractor::SpecifyAgentAction_Implementation(
@@ -172,7 +172,7 @@ void UTankLearningAgentsInteractor::SpecifyAgentAction_Implementation(
 		InActionSchema,
 		ActionElements);
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsInteractor: Action schema specified (Throttle + Steering). v8.0: Turret disabled for navigation."));
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsInteractor: Action schema specified (Throttle + Steering). v8.0: Turret disabled for navigation."));
 }
 
 void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
@@ -183,7 +183,7 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 	ABaseTankAIController* TankController = GetTankControllerFromAgentId(AgentId);
 	if (!TankController)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsInteractor: Failed to get TankController for agent %d"), AgentId);
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsInteractor: Failed to get TankController for agent %d"), AgentId);
 		return;
 	}
 
@@ -367,13 +367,13 @@ void UTankLearningAgentsInteractor::GatherAgentObservation_Implementation(
 		const TCHAR* HeadingStatus = (FMath::Abs(HeadingError) < 0.1f) ? TEXT("ON TARGET") :
 			((HeadingError > 0) ? TEXT("TURN RIGHT") : TEXT("TURN LEFT"));
 
-		UE_LOG(LogTemp, Log, TEXT("[Agent %d] Speed=%.0f | Waypoint: %.1fm | Heading=%.2f (%s)"),
+		UE_LOG(LogTemp, Verbose, TEXT("[Agent %d] Speed=%.0f | Waypoint: %.1fm | Heading=%.2f (%s)"),
 			AgentId, ForwardSpeed, DistanceToWaypoint / 100.0f, HeadingError, HeadingStatus);
 
 		// Warning if no navigation goal
 		if (DirectionToWaypoint.IsNearlyZero())
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[Agent %d] NO WAYPOINT - check WaypointComponent target"), AgentId);
+			UE_LOG(LogTemp, Verbose, TEXT("[Agent %d] NO WAYPOINT - check WaypointComponent target"), AgentId);
 		}
 	}
 
@@ -391,7 +391,7 @@ void UTankLearningAgentsInteractor::PerformAgentAction_Implementation(
 	AAILearningAgentsController* AIController = Cast<AAILearningAgentsController>(GetTankControllerFromAgentId(AgentId));
 	if (!AIController)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsInteractor: Failed to get AIController for agent %d"), AgentId);
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsInteractor: Failed to get AIController for agent %d"), AgentId);
 		return;
 	}
 
@@ -399,7 +399,7 @@ void UTankLearningAgentsInteractor::PerformAgentAction_Implementation(
 	TMap<FName, FLearningAgentsActionObjectElement> ActionElements;
 	if (!ULearningAgentsActions::GetStructAction(ActionElements, InActionObject, InActionObjectElement))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsInteractor: Failed to get struct action for agent %d"), AgentId);
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsInteractor: Failed to get struct action for agent %d"), AgentId);
 		return;
 	}
 
@@ -431,7 +431,7 @@ void UTankLearningAgentsInteractor::PerformAgentAction_Implementation(
 		const TCHAR* ThrottleDir = (Throttle > 0.1f) ? TEXT("FWD") : TEXT("STOP");
 		const TCHAR* SteeringDir = (Steering > 0.1f) ? TEXT("R") : ((Steering < -0.1f) ? TEXT("L") : TEXT("-"));
 
-		UE_LOG(LogTemp, Log, TEXT("[Agent %d ACTION] Throttle=%.2f(%s) Steering=%.2f(%s)"),
+		UE_LOG(LogTemp, Verbose, TEXT("[Agent %d ACTION] Throttle=%.2f(%s) Steering=%.2f(%s)"),
 			AgentId, Throttle, ThrottleDir, Steering, SteeringDir);
 	}
 }
@@ -499,7 +499,7 @@ void UTankLearningAgentsInteractor::EncodeHumanActionsForAgent(int32 AgentId)
 	static int32 EncodeLogCounter = 0;
 	if (++EncodeLogCounter % 120 == 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[Recording Agent %d] Throttle=%.2f Steering=%.2f"),
+		UE_LOG(LogTemp, Verbose, TEXT("[Recording Agent %d] Throttle=%.2f Steering=%.2f"),
 			AgentId, Throttle, Steering);
 	}
 }

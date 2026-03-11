@@ -247,17 +247,21 @@ void UCombatManeuverComponent::UpdateCombatState(float DeltaTime)
 		return;
 	}
 
-	// Get highest awareness state from detected enemies
-	EAwarenessState HighestAwareness = EAwarenessState::Unaware;
-	const TArray<FDetectedEnemyInfo>& DetectedEnemies = EnemyDetection->GetDetectedEnemies();
-
-	for (const FDetectedEnemyInfo& EnemyInfo : DetectedEnemies)
+	// Get highest awareness state - use cached value unless dirty
+	if (bAwarenessDirty)
 	{
-		if (EnemyInfo.AwarenessState > HighestAwareness)
+		CachedHighestAwareness = EAwarenessState::Unaware;
+		const TArray<FDetectedEnemyInfo>& DetectedEnemies = EnemyDetection->GetDetectedEnemies();
+		for (const FDetectedEnemyInfo& EnemyInfo : DetectedEnemies)
 		{
-			HighestAwareness = EnemyInfo.AwarenessState;
+			if (EnemyInfo.AwarenessState > CachedHighestAwareness)
+			{
+				CachedHighestAwareness = EnemyInfo.AwarenessState;
+			}
 		}
+		bAwarenessDirty = false;
 	}
+	const EAwarenessState HighestAwareness = CachedHighestAwareness;
 
 	// Determine appropriate combat state
 	ECombatState DesiredState = CurrentCombatState;
@@ -345,7 +349,7 @@ void UCombatManeuverComponent::UpdateManeuverExecution(float DeltaTime)
 				// Re-push current combat waypoint to navigation system
 				if (bLogManeuverSelection)
 				{
-					UE_LOG(LogTemp, Warning, TEXT("[CombatManeuver] Path stuck! Regenerating NavMesh path to waypoint..."));
+					UE_LOG(LogTemp, Verbose, TEXT("[CombatManeuver] Path stuck! Regenerating NavMesh path to waypoint..."));
 				}
 				PushCurrentWaypointToNavigation();
 			}
@@ -487,7 +491,7 @@ void UCombatManeuverComponent::TransitionToState(ECombatState NewState)
 
 	if (bLogManeuverSelection)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[CombatManeuver] State: %s -> %s"),
+		UE_LOG(LogTemp, Verbose, TEXT("[CombatManeuver] State: %s -> %s"),
 			*CombatManeuverUtils::GetCombatStateName(OldState),
 			*CombatManeuverUtils::GetCombatStateName(NewState));
 	}
@@ -514,7 +518,7 @@ void UCombatManeuverComponent::StartManeuver(const FCombatManeuver& Maneuver)
 
 	if (bLogManeuverSelection)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[CombatManeuver] Started: %s with %d waypoints"),
+		UE_LOG(LogTemp, Verbose, TEXT("[CombatManeuver] Started: %s with %d waypoints"),
 			*CombatManeuverUtils::GetManeuverTypeName(Maneuver.ManeuverType),
 			Maneuver.Waypoints.Num());
 	}
@@ -543,7 +547,7 @@ void UCombatManeuverComponent::CompleteManeuver(bool bSuccess)
 
 		if (bLogManeuverSelection)
 		{
-			UE_LOG(LogTemp, Log, TEXT("[CombatManeuver] Started %.1fs cooldown for %s"),
+			UE_LOG(LogTemp, Verbose, TEXT("[CombatManeuver] Started %.1fs cooldown for %s"),
 				ManeuverCooldownDuration,
 				*CombatManeuverUtils::GetManeuverTypeName(CompletedManeuver.ManeuverType));
 		}
@@ -554,7 +558,7 @@ void UCombatManeuverComponent::CompleteManeuver(bool bSuccess)
 
 	if (bLogManeuverSelection)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[CombatManeuver] Completed: %s (%s)"),
+		UE_LOG(LogTemp, Verbose, TEXT("[CombatManeuver] Completed: %s (%s)"),
 			*CombatManeuverUtils::GetManeuverTypeName(CompletedManeuver.ManeuverType),
 			bSuccess ? TEXT("Success") : TEXT("Cancelled"));
 	}
@@ -609,7 +613,7 @@ bool UCombatManeuverComponent::IsCurrentWaypointReached() const
 	{
 		if (bLogManeuverSelection)
 		{
-			UE_LOG(LogTemp, Log, TEXT("[CombatManeuver] WP REACHED: Dist=%.0fcm <= Radius=%.0fcm"),
+			UE_LOG(LogTemp, Verbose, TEXT("[CombatManeuver] WP REACHED: Dist=%.0fcm <= Radius=%.0fcm"),
 				Distance, CurrentWP->ReachRadius);
 		}
 		return true;
@@ -621,7 +625,7 @@ bool UCombatManeuverComponent::IsCurrentWaypointReached() const
 	{
 		if (bLogManeuverSelection)
 		{
-			UE_LOG(LogTemp, Log, TEXT("[CombatManeuver] WP Check: Dist=%.0fcm > Radius=%.0fcm, NavMesh in progress"),
+			UE_LOG(LogTemp, Verbose, TEXT("[CombatManeuver] WP Check: Dist=%.0fcm > Radius=%.0fcm, NavMesh in progress"),
 				Distance, CurrentWP->ReachRadius);
 		}
 		return false;
@@ -630,7 +634,7 @@ bool UCombatManeuverComponent::IsCurrentWaypointReached() const
 	// NavMesh completed but still not within reach radius
 	if (bLogManeuverSelection)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[CombatManeuver] WP Check: Dist=%.0fcm > Radius=%.0fcm, NavMesh done but not reached"),
+		UE_LOG(LogTemp, Verbose, TEXT("[CombatManeuver] WP Check: Dist=%.0fcm > Radius=%.0fcm, NavMesh done but not reached"),
 			Distance, CurrentWP->ReachRadius);
 	}
 
@@ -1025,7 +1029,7 @@ TArray<FCombatWaypoint> UCombatManeuverComponent::GenerateFlankingWaypoints(FVec
 
 	if (bLogManeuverSelection)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[Flanking] Direction=%s, LateralDist=%.0fcm"),
+		UE_LOG(LogTemp, Verbose, TEXT("[Flanking] Direction=%s, LateralDist=%.0fcm"),
 			bGoRight ? TEXT("RIGHT") : TEXT("LEFT"), DynamicLateralDistance);
 	}
 
@@ -1101,7 +1105,7 @@ TArray<FCombatWaypoint> UCombatManeuverComponent::GenerateRetreatWaypoints(FVect
 
 	if (bLogManeuverSelection)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[Retreat] Diagonal %s, AngleOffset=%.0f°, Distance=%.0fcm (%.0fcm per segment, ReachRadius=%.0fcm)"),
+		UE_LOG(LogTemp, Verbose, TEXT("[Retreat] Diagonal %s, AngleOffset=%.0f°, Distance=%.0fcm (%.0fcm per segment, ReachRadius=%.0fcm)"),
 			bGoRight ? TEXT("RIGHT") : TEXT("LEFT"), RetreatAngleOffset, DynamicRetreatDistance, SegmentDistance, DynamicReachRadius);
 	}
 
@@ -1273,7 +1277,7 @@ TArray<FCombatWaypoint> UCombatManeuverComponent::GenerateShootScootWaypoints(FV
 
 	if (bLogManeuverSelection)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[ShootScoot] Relocation %s, Dist=%.0fcm"),
+		UE_LOG(LogTemp, Verbose, TEXT("[ShootScoot] Relocation %s, Dist=%.0fcm"),
 			bGoRight ? TEXT("RIGHT") : TEXT("LEFT"), DynamicRelocationDist);
 	}
 
@@ -1319,7 +1323,7 @@ TArray<FCombatWaypoint> UCombatManeuverComponent::GenerateCircleStrafeWaypoints(
 
 	if (bLogManeuverSelection)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[CircleStrafe] Direction=%s, Radius=%.0fcm"),
+		UE_LOG(LogTemp, Verbose, TEXT("[CircleStrafe] Direction=%s, Radius=%.0fcm"),
 			bClockwise ? TEXT("CW") : TEXT("CCW"), DynamicRadius);
 	}
 
@@ -1584,7 +1588,7 @@ float UCombatManeuverComponent::CalculateDynamicDistance(FVector Direction, floa
 
 	if (bLogManeuverSelection)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[DynamicDist] Clearance=%.0fcm, Safe=%.0fcm, Config=%.0fcm, Final=%.0fcm"),
+		UE_LOG(LogTemp, Verbose, TEXT("[DynamicDist] Clearance=%.0fcm, Safe=%.0fcm, Config=%.0fcm, Final=%.0fcm"),
 			Clearance, SafeDistance, ConfiguredDistance, FinalDistance);
 	}
 
@@ -1802,23 +1806,23 @@ void UCombatManeuverComponent::DrawDebugWaypoints() const
 
 void UCombatManeuverComponent::LogManeuverSelection(const FManeuverSelectionResult& Result) const
 {
-	UE_LOG(LogTemp, Log, TEXT("[CombatManeuver] Selection Result:"));
-	UE_LOG(LogTemp, Log, TEXT("  Selected: %s (Score: %.2f)"),
+	UE_LOG(LogTemp, Verbose, TEXT("[CombatManeuver] Selection Result:"));
+	UE_LOG(LogTemp, Verbose, TEXT("  Selected: %s (Score: %.2f)"),
 		*CombatManeuverUtils::GetManeuverTypeName(Result.SelectedManeuver),
 		Result.SelectedScore);
 
-	UE_LOG(LogTemp, Log, TEXT("  Situation: Enemy=%.0fcm, Health=%.0f%%, UnderFire=%d, Cover=%d, Open=%d"),
+	UE_LOG(LogTemp, Verbose, TEXT("  Situation: Enemy=%.0fcm, Health=%.0f%%, UnderFire=%d, Cover=%d, Open=%d"),
 		Result.EvaluatedSituation.EnemyDistance,
 		Result.EvaluatedSituation.OwnHealth * 100.0f,
 		Result.EvaluatedSituation.bUnderFire ? 1 : 0,
 		Result.EvaluatedSituation.bCoverAvailable ? 1 : 0,
 		Result.EvaluatedSituation.bOpenTerrain ? 1 : 0);
 
-	UE_LOG(LogTemp, Log, TEXT("  All Scores:"));
+	UE_LOG(LogTemp, Verbose, TEXT("  All Scores:"));
 	for (const auto& ScorePair : Result.AllScores)
 	{
 		bool bValid = Result.ValidManeuvers.Contains(ScorePair.Key);
-		UE_LOG(LogTemp, Log, TEXT("    %s: %.2f %s"),
+		UE_LOG(LogTemp, Verbose, TEXT("    %s: %.2f %s"),
 			*CombatManeuverUtils::GetManeuverTypeName(ScorePair.Key),
 			ScorePair.Value,
 			bValid ? TEXT("") : TEXT("[INVALID]"));

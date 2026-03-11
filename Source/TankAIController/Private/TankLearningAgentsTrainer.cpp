@@ -19,7 +19,7 @@ void UTankLearningAgentsTrainer::OnAgentsAdded_Implementation(const TArray<int32
 	for (int32 AgentId : AgentIds)
 	{
 		EpisodeStartTimes.Add(AgentId, CurrentTime);
-		UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsTrainer: Agent %d added, episode started at %.2f"), AgentId, CurrentTime);
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsTrainer: Agent %d added, episode started at %.2f"), AgentId, CurrentTime);
 	}
 }
 
@@ -29,7 +29,7 @@ void UTankLearningAgentsTrainer::OnAgentsRemoved_Implementation(const TArray<int
 	for (int32 AgentId : AgentIds)
 	{
 		EpisodeStartTimes.Remove(AgentId);
-		UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsTrainer: Agent %d removed"), AgentId);
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsTrainer: Agent %d removed"), AgentId);
 	}
 }
 
@@ -41,7 +41,7 @@ void UTankLearningAgentsTrainer::OnAgentsReset_Implementation(const TArray<int32
 	for (int32 AgentId : AgentIds)
 	{
 		EpisodeStartTimes.Add(AgentId, CurrentTime);
-		UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsTrainer: Agent %d reset, episode restarted at %.2f"), AgentId, CurrentTime);
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsTrainer: Agent %d reset, episode restarted at %.2f"), AgentId, CurrentTime);
 	}
 }
 
@@ -86,7 +86,7 @@ bool UTankLearningAgentsTrainer::ShouldResetEpisode(int32 AgentId) const
 
 		if (EpisodeDuration >= MaxEpisodeDuration)
 		{
-			UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsTrainer: Agent %d episode timeout (%.2fs)"), AgentId, EpisodeDuration);
+			UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsTrainer: Agent %d episode timeout (%.2fs)"), AgentId, EpisodeDuration);
 			return true;
 		}
 	}
@@ -105,7 +105,7 @@ bool UTankLearningAgentsTrainer::ShouldResetEpisode(int32 AgentId) const
 	// If more than half the traces detect very close obstacles, reset
 	if (CloseObstacleCount > LineTraces.Num() / 2)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TankLearningAgentsTrainer: Agent %d stuck in collision (%d/%d traces blocked)"),
+		UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsTrainer: Agent %d stuck in collision (%d/%d traces blocked)"),
 			AgentId, CloseObstacleCount, LineTraces.Num());
 		return true;
 	}
@@ -135,7 +135,7 @@ void UTankLearningAgentsTrainer::ResetEpisodeForAgent(int32 AgentId)
 	// For now, we'll just reset velocity and rotation
 	TankPawn->SetActorRotation(FRotator::ZeroRotator);
 
-	UE_LOG(LogTemp, Log, TEXT("TankLearningAgentsTrainer: Reset episode for agent %d"), AgentId);
+	UE_LOG(LogTemp, Verbose, TEXT("TankLearningAgentsTrainer: Reset episode for agent %d"), AgentId);
 }
 
 ABaseTankAIController* UTankLearningAgentsTrainer::GetTankControllerFromAgentId(int32 AgentId) const
